@@ -1,0 +1,20 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Escrow extends Model
+{
+    protected $guarded = [];
+
+    public function customization_request()
+    {
+        return $this->belongsTo(CustomizationRequest::class);
+    }
+
+    public function escrow_histories()
+    {
+        return $this->hasMany(EscrowHistory::class);
+    }
+}
