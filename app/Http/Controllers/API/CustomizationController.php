@@ -246,6 +246,88 @@ class CustomizationController extends Controller
         ]);
     }
 
+    /**
+     * Accept a customization request by resolving the 'Accepted' status name to its ID.
+     * This avoids hardcoding status IDs in the frontend.
+     */
+    public function accept(Request $request)
+    {
+        return $this->setStatusByName($request, 'Accepted');
+    }
+
+    /**
+     * Reject/Cancel a customization request by resolving the 'Cancelled' status name to its ID.
+     */
+    public function reject(Request $request)
+    {
+        return $this->setStatusByName($request, 'Cancelled');
+    }
+
+    private function setStatusByName(Request $request, string $statusName)
+    {
+        $user = $this->authenticatedUser();
+
+        $customization = CustomizationRequest::find($request->customization_id);
+
+        if (!$customization || !$this->isParticipant($customization, $user->id)) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'Invalid customization request!'
+            ], 403);
+        }
+
+        $status = \App\Models\CustomizationStatus::where('name', $statusName)->first();
+
+        if (!$status) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => "Status '{$statusName}' not found."
+            ], 500);
+        }
+
+        $customization->update(['customization_status_id' => $status->id]);
+        $customization->load('customization_status');
+
+        $chat = $this->createChatForCustomization($customization);
+        $itemTitle = $customization->asset?->title ?? $customization->template?->title ?? 'Customization';
+        $resolvedStatusName = $customization->customization_status?->name ?? 'Pending';
+
+        CustomizationChatMessage::where('customization_chat_id', $chat->id)
+            ->where('message_type', 'customization_request')
+            ->get()
+            ->each(function ($msg) use ($resolvedStatusName) {
+                $meta = json_decode($msg->meta ?? '{}', true);
+                $meta['status'] = $resolvedStatusName;
+                $msg->update(['meta' => json_encode($meta)]);
+            });
+
+        $chat->messages()->create([
+            'sender_user_id' => $user->id,
+            'message_type' => 'customization_request',
+            'message' => 'Customization status changed.',
+            'meta' => json_encode([
+                'title' => $itemTitle,
+                'milestone' => '',
+                'status' => $resolvedStatusName,
+                'customization_status_id' => $status->id,
+                'reason' => $request->reason,
+            ]),
+        ]);
+        $chat->update(['last_message_at' => now()]);
+
+        Notification::create([
+            'user_id' => $user->id == $customization->user_id ? $customization->designer_id : $customization->user_id,
+            'title' => 'Customization Request Update',
+            'message' => 'Your customization request status has been updated!',
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Customization request status updated successfully!',
+            'customization' => new CustomizationRequestResource($customization->fresh(['asset.user', 'template.user', 'user', 'designer', 'customization_status', 'milestones', 'price_adjustments', 'accepted_price_adjustment', 'chat.messages.sender_user', 'revisions'])),
+        ]);
+    }
+
     public function addMilestone(Request $request)
     {
         $user = $this->authenticatedUser();

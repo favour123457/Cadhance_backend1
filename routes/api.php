@@ -197,6 +197,8 @@ Route::middleware('jwt.auth')->group(function () {
         Route::post('/store', [CustomizationController::class, 'store']);
         Route::post('/chat/send-message', [CustomizationController::class, 'sendMessage']);
         Route::post('/update-status', [CustomizationController::class, 'updateStatus']);
+        Route::post('/accept', [CustomizationController::class, 'accept']);
+        Route::post('/reject', [CustomizationController::class, 'reject']);
         Route::post('/milestone/add', [CustomizationController::class, 'addMilestone']);
         Route::post('/milestone/remove', [CustomizationController::class, 'removeMilestone']);
         Route::post('/price-adjustment/add', [CustomizationController::class, 'addPriceAdjustment']);
