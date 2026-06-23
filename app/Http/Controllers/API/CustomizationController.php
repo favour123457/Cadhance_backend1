@@ -20,6 +20,7 @@ use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use App\Events\ChatMessageSent;
 
 class CustomizationController extends Controller
 {
@@ -469,9 +470,9 @@ class CustomizationController extends Controller
             'meta' => $meta,
         ]);
 
-        // Explicitly broadcast the new message for production debugging
+        // Broadcast synchronously so it works on shared hosting without a queue worker.
         try {
-            $message->broadcastCreated();
+            broadcast(new ChatMessageSent($message));
             \Log::info('Chat message broadcasted', ['message_id' => $message->id, 'chat_id' => $chat->id]);
         } catch (\Exception $e) {
             \Log::error('Chat message broadcast failed', ['error' => $e->getMessage(), 'message_id' => $message->id]);
