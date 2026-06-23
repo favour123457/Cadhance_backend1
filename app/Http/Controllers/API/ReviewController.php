@@ -83,18 +83,8 @@ class ReviewController extends Controller
         $average = $total > 0 ? round($allReviews->avg('rating'), 1) : 0;
 
         $breakdown = [];
-        for ($i = 5; $i >= 1; $i--) {
-            $breakdown[] = [
-                'label' => match($i) {
-                    5 => 'Five',
-                    4 => 'Four',
-                    3 => 'Three',
-                    2 => 'Two',
-                    1 => 'One',
-                },
-                'count' => $allReviews->where('rating', $i)->count(),
-                'stars' => $i
-            ];
+        for ($i = 1; $i <= 5; $i++) {
+            $breakdown[$i] = $allReviews->where('rating', $i)->count();
         }
 
         $reviews = Review::with('user')
