@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\UsersResource;
 use App\Mail\GeneralMail;
 use App\Models\DeletedUser;
+use App\Models\Notification;
 use App\Models\NotificationSetting;
 use App\Models\Otp;
 use App\Models\User;
