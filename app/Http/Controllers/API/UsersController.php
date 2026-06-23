@@ -191,7 +191,7 @@ class UsersController extends Controller
      */
     public function resendRegistrationOtp(Request $request)
     {
-        $email = $request->email;
+        $email = urldecode($request->email);
         $user = User::where('email', $email)->first();
 
         if (!$user) {
@@ -243,8 +243,8 @@ class UsersController extends Controller
      */
     public function verifyRegistration(Request $request)
     {
-        $email = $request->email;
-        $code = $request->code;
+        $email = urldecode($request->email);
+        $code = trim((string) $request->code);
 
         $user = User::where('email', $email)->first();
 
