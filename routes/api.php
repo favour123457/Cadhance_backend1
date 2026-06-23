@@ -24,6 +24,8 @@ use App\Http\Controllers\API\ReviewController;
 //route for auth
 Route::prefix('auth')->group(function () {
     Route::post('/register', [UsersController::class, 'register']);
+    Route::post('/verify-registration', [UsersController::class, 'verifyRegistration']);
+    Route::post('/resend-registration-otp', [UsersController::class, 'resendRegistrationOtp']);
     Route::post('/login', [UsersController::class, 'login']);
     Route::post('/sms-verification-one', [AuthController::class, 'smsVerificationOne']);
     Route::post('/sms-verification-two', [AuthController::class, 'smsVerificationTwo']);

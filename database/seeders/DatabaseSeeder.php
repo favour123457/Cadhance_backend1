@@ -27,6 +27,12 @@ class DatabaseSeeder extends Seeder
         \App\Models\OfferType::firstOrCreate(['id' => 3], ['name' => 'Both', 'description' => 'User does both']);
         \App\Models\OfferType::firstOrCreate(['id' => 4], ['name' => 'None', 'description' => 'Regular client']);
         
+        // OTP types
+        \App\Models\OtpType::firstOrCreate(['id' => 1], ['name' => 'Login']);
+        \App\Models\OtpType::firstOrCreate(['id' => 2], ['name' => 'Registration']);
+        \App\Models\OtpType::firstOrCreate(['id' => 3], ['name' => 'Password Reset']);
+        \App\Models\OtpType::firstOrCreate(['id' => 4], ['name' => 'Email Verification']);
+
         // Essential statuses
         \App\Models\CustomizationStatus::firstOrCreate(['id' => 1], ['name' => 'Pending', 'description' => 'Request is pending']);
         \App\Models\CustomizationStatus::firstOrCreate(['id' => 2], ['name' => 'Accepted', 'description' => 'Request was accepted']);

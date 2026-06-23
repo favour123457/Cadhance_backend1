@@ -158,9 +158,6 @@ class UsersController extends Controller
         ]);
 
 
-        //generate jwt token
-        $token = JWTAuth::fromUser($user);
-
         // OTP
         $otp = mt_rand(100000, 999999);
 
@@ -171,21 +168,128 @@ class UsersController extends Controller
             'code' => $otp,
         ]);
 
-
-
-        //send detailed welcome email to user
-        $msg = "Hi $name, welcome to our platform! We're excited to have you on board.";
-        $subject = 'Welcome to our platform!';
-
-
-        Mail::send(new GeneralMail($name, $email, $subject, $msg));
-
+        // Send registration OTP email
+        Mail::send(new GeneralMail(
+            $name,
+            $email,
+            'Verify Your Email',
+            'Thank you for signing up! Your email verification code is: <br/><strong style="font-size: 24px; color: #3b82f6;">' . $otp . '</strong><br/><br/>This code will expire in 10 minutes.'
+        ));
 
         return response()->json([
             'status' => 'success',
-            'token' => $token,
+            'message' => 'Registration successful. Please check your email for the verification code.',
             'user' =>  new UsersResource($user),
             'otp' => $otp,
+        ]);
+    }
+
+    /**
+     * POST /api/auth/resend-registration-otp
+     * Resend the registration OTP to a user who hasn't verified their email yet.
+     */
+    public function resendRegistrationOtp(Request $request)
+    {
+        $email = $request->email;
+        $user = User::where('email', $email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'Invalid user!'
+            ], 403);
+        }
+
+        if ($user->email_verified_at) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'Email already verified!'
+            ], 403);
+        }
+
+        // Invalidate previous unused registration OTPs
+        Otp::where('user_id', $user->id)
+            ->where('otp_type_id', 2)
+            ->where('used', 0)
+            ->update(['used' => 1]);
+
+        $otp = mt_rand(100000, 999999);
+
+        Otp::create([
+            'user_id' => $user->id,
+            'user' => $user->email,
+            'otp_type_id' => 2,
+            'code' => $otp,
+        ]);
+
+        Mail::send(new GeneralMail(
+            $user->name,
+            $email,
+            'Verify Your Email',
+            'Your new email verification code is: <br/><strong style="font-size: 24px; color: #3b82f6;">' . $otp . '</strong><br/><br/>This code will expire in 10 minutes.'
+        ));
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'A new verification code has been sent to your email.',
+            'otp' => $otp,
+        ]);
+    }
+
+    /**
+     * POST /api/auth/verify-registration
+     * Verify a new user's email via the OTP sent after registration.
+     */
+    public function verifyRegistration(Request $request)
+    {
+        $email = $request->email;
+        $code = $request->code;
+
+        $user = User::where('email', $email)->first();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'Invalid user!'
+            ], 403);
+        }
+
+        $otp = Otp::where('user_id', $user->id)
+            ->where('otp_type_id', 2)
+            ->where('code', $code)
+            ->where('used', 0)
+            ->first();
+
+        if (!$otp) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'Invalid verification code. Please check your email and try again.'
+            ], 403);
+        }
+
+        if ($otp->created_at->addMinutes(10)->isPast()) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'Verification code has expired. Please request a new code.'
+            ], 403);
+        }
+
+        $otp->update(['used' => 1]);
+        $user->update(['email_verified_at' => now()]);
+
+        $token = JWTAuth::fromUser($user);
+
+        Notification::create([
+            'user_id' => $user->id,
+            'title' => 'Welcome to ' . config('app.name'),
+            'message' => 'Your email has been verified. Welcome aboard!',
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Email verified successfully!',
+            'token' => $token,
+            'user' => new UsersResource($user->fresh()),
         ]);
     }
 
