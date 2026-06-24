@@ -61,7 +61,12 @@ class ProfileController extends Controller
 
     public function getProfile($user_id)
     {
-        $currentUser = auth('api')->user();
+        $currentUser = null;
+        try {
+            $currentUser = JWTAuth::parseToken()->authenticate();
+        } catch (\Exception $e) {
+            // No token or invalid token — public viewer
+        }
         $isOwner = $currentUser && (int) $currentUser->id === (int) $user_id;
 
         $profileQuery = Profile::with([
