@@ -86,7 +86,7 @@ class UsersController extends Controller
     {
         $name = $request->name;
         $account_type_id = $request->account_type_id;
-        $email    = $request->email;
+        $email    = urldecode($request->email);
         $password = $request->password;
         $user_type_id = 1; // default to regular user
         $offer_type_id = $request->offer_type_id ?? 4; // 4 = "None" (default for clients)
@@ -246,9 +246,12 @@ class UsersController extends Controller
         $email = urldecode($request->email);
         $code = trim((string) $request->code);
 
+        \Log::info('OTP verify attempt', ['email' => $email, 'code' => $code]);
+
         $user = User::where('email', $email)->first();
 
         if (!$user) {
+            \Log::warning('OTP verify: user not found', ['email' => $email]);
             return response()->json([
                 'status' => 'failed',
                 'message' => 'Invalid user!'
@@ -262,6 +265,16 @@ class UsersController extends Controller
             ->first();
 
         if (!$otp) {
+            $latestOtp = Otp::where('user_id', $user->id)
+                ->where('otp_type_id', 2)
+                ->latest()
+                ->first();
+            \Log::warning('OTP verify: code mismatch', [
+                'email' => $email,
+                'provided_code' => $code,
+                'latest_code' => $latestOtp?->code,
+                'latest_used' => $latestOtp?->used,
+            ]);
             return response()->json([
                 'status' => 'failed',
                 'message' => 'Invalid verification code. Please check your email and try again.'
