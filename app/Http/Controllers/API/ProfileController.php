@@ -61,14 +61,23 @@ class ProfileController extends Controller
 
     public function getProfile($user_id)
     {
-        $profile = Profile::with([
+        $currentUser = auth('api')->user();
+        $isOwner = $currentUser && (int) $currentUser->id === (int) $user_id;
+
+        $profileQuery = Profile::with([
             'user' => fn($q) => $q->withRatingStats()->with('country'),
             'primary_role',
             'design_category'
         ])
-            ->where('user_id', $user_id)
-            ->where('visibility', true)
-            ->first();
+            ->where('user_id', $user_id);
+
+        // Public profiles require visibility = true.
+        // The owner can always view their own profile, even in draft/private mode.
+        if (!$isOwner) {
+            $profileQuery->where('visibility', true);
+        }
+
+        $profile = $profileQuery->first();
 
         if (!$profile) {
             return response()->json([
@@ -77,7 +86,7 @@ class ProfileController extends Controller
             ], 404);
         }
 
-        return response()->json(new ProfileResource($profile));
+        return response()->json(new ProfileResource($profile, $isOwner));
     }
 
     private function publicDesignersQuery(Request $request, bool $topFirmsOnly = false)
