@@ -164,7 +164,7 @@ class ProfileController extends Controller
         }
         
         if ($request->has('visibility') && !is_null($request->visibility)) {
-            $data['visibility'] = $request->visibility;
+            $data['visibility'] = $this->toBool($request->visibility);
         }
         
         if ($request->has('design_category_id') && !is_null($request->design_category_id)) {
@@ -176,7 +176,7 @@ class ProfileController extends Controller
         }
         
         if ($request->has('is_studio_name_display_name') && !is_null($request->is_studio_name_display_name)) {
-            $data['is_studio_name_display_name'] = $request->is_studio_name_display_name;
+            $data['is_studio_name_display_name'] = $this->toBool($request->is_studio_name_display_name);
         }
         
         if ($request->has('social_links')) {
@@ -212,6 +212,20 @@ class ProfileController extends Controller
             'message' => 'Profile updated successfully!',
             'profile' => new ProfileResource($profile->fresh(), true),
         ]);
+    }
+
+    /**
+     * Convert a string/boolean value to a proper boolean.
+     */
+    private function toBool($value): bool
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+        if (is_numeric($value)) {
+            return (int) $value !== 0;
+        }
+        return in_array(strtolower(trim((string) $value)), ['true', 'yes', 'on'], true);
     }
 
     public function getMySkills()
