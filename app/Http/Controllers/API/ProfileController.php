@@ -54,7 +54,11 @@ class ProfileController extends Controller
         );
 
         // Load the user relationship and other related data
-        $profile->load(['user' => fn($q) => $q->withRatingStats()->with('country'), 'primary_role', 'design_category']);
+        $profile->load([
+            'user' => fn($q) => $q->withRatingStats()->with(['country', 'user_skills.skill']),
+            'primary_role',
+            'design_category'
+        ]);
 
         return response()->json(new ProfileResource($profile, true));
     }
@@ -70,7 +74,7 @@ class ProfileController extends Controller
         $isOwner = $currentUser && (int) $currentUser->id === (int) $user_id;
 
         $profileQuery = Profile::with([
-            'user' => fn($q) => $q->withRatingStats()->with('country'),
+            'user' => fn($q) => $q->withRatingStats()->with(['country', 'user_skills.skill']),
             'primary_role',
             'design_category'
         ])

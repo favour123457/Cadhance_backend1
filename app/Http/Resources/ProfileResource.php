@@ -53,6 +53,12 @@ class ProfileResource extends JsonResource
             'country'                     => $user && $user->country ? new MiniCountryResource($user->country) : null,
             'average_rating'              => $averageRating,
             'total_reviews'               => $totalReviews,
+            'is_verified'                 => $user && !is_null($user->email_verified_at),
+            'email_verified_at'           => $user?->email_verified_at,
+            'skills'                      => $user
+                ? $user->user_skills->map(fn ($us) => $us->skill?->name)->filter()->values()
+                : [],
+            'categories'                  => $this->design_category ? [$this->design_category->name] : [],
             'created_at'                  => $this->created_at,
         ];
     }
