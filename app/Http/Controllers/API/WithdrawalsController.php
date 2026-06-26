@@ -29,14 +29,22 @@ class WithdrawalsController extends Controller
 
     public function store(Request $request)
     {
+        $validated = $request->validate([
+            'amount'                 => 'required|numeric|min:1',
+            'payment_method'         => 'sometimes|string|in:bank_transfer,mobile_money',
+            'reason'                 => 'sometimes|string|max:255',
+            'bank_id'                => 'required_if:payment_method,bank_transfer|integer',
+            'mobile_money_account_id'=> 'required_if:payment_method,mobile_money|integer',
+        ]);
+
         $token = JWTAuth::parseToken();
         $user = $token->authenticate();
 
-        $amount         = $request->amount;
-        $payment_method = $request->payment_method ?? 'bank_transfer'; // 'bank_transfer' or 'mobile_money'
+        $amount         = (float) $validated['amount'];
+        $payment_method = $validated['payment_method'] ?? 'bank_transfer'; // 'bank_transfer' or 'mobile_money'
         
         $wallet = $user->wallet;
-        $reason = $request->reason ?? 'Withdrawal';
+        $reason = $validated['reason'] ?? 'Withdrawal';
 
         // Check if balance is enough
         if ($wallet->balance < $amount) {
@@ -322,6 +330,16 @@ class WithdrawalsController extends Controller
                 'withdrawal' => new WithdrawalHistoryResource($withdrawal),
             ]);
 
+        } catch (\RuntimeException $e) {
+            DB::rollBack();
+            Log::error('Withdrawal currency conversion failed', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json([
+                'status'  => 'failed',
+                'message' => 'Currency conversion failed. Please try again later or contact support.',
+            ], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('Withdrawal error', [

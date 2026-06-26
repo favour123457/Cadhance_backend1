@@ -295,6 +295,7 @@ function getForexPrice($base, $quote)
  * @param string $fromCurrency - Source currency symbol (e.g., 'USD')
  * @param string $toCurrency - Target currency symbol (e.g., 'NGN')
  * @return float - Converted amount
+ * @throws \RuntimeException When a conversion rate cannot be determined.
  */
 function convertCurrency($amount, $fromCurrency, $toCurrency)
 {
@@ -306,24 +307,23 @@ function convertCurrency($amount, $fromCurrency, $toCurrency)
         return $amount;
     }
 
-    try {
-        $rate = getStoredExchangeRate($from, $to);
+    $rate = getStoredExchangeRate($from, $to);
 
-        if ($rate === null) {
-            // Fallback to live API for direct rate
-            $rate = getForexPrice($to, $from);
-        }
+    if ($rate === null) {
+        // Fallback to live API for direct rate
+        $rate = getForexPrice($to, $from);
+    }
 
-        return round($amount * $rate, 2);
-    } catch (\Exception $e) {
+    if ($rate === null || $rate <= 0) {
         \Log::error('Currency conversion failed', [
             'from' => $from,
             'to' => $to,
             'amount' => $amount,
-            'error' => $e->getMessage()
         ]);
-        return $amount;
+        throw new \RuntimeException('Could not determine exchange rate from ' . $from . ' to ' . $to);
     }
+
+    return round($amount * $rate, 2);
 }
 
 /**
@@ -358,4 +358,34 @@ function getStoredExchangeRate($from, $to)
     }
 
     return round($toRate / $fromRate, 6);
+}
+
+if (!function_exists('fulfillWalletTopup')) {
+    /**
+     * Atomically fulfill a wallet top-up.
+     * Uses a status-guarded update so the wallet is credited at most once,
+     * even if the callback and webhook run concurrently.
+     *
+     * @param \App\Models\WalletHistory $history
+     * @return bool True if the top-up was fulfilled by this call.
+     */
+    function fulfillWalletTopup(\App\Models\WalletHistory $history): bool
+    {
+        // Only act on pending histories
+        if ($history->wallet_history_status_id != 1) {
+            return $history->wallet_history_status_id == 2;
+        }
+
+        $affected = \App\Models\WalletHistory::where('id', $history->id)
+            ->where('wallet_history_status_id', 1) // pending
+            ->update(['wallet_history_status_id' => 2]); // success
+
+        if ($affected > 0) {
+            $history->wallet->increment('balance', $history->amount);
+            return true;
+        }
+
+        // Another process already fulfilled it
+        return false;
+    }
 }

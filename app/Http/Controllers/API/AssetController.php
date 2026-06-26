@@ -8,7 +8,7 @@ use App\Models\Asset;
 use App\Models\AssetFile;
 use App\Models\User;
 use App\Models\UserPurchase;
-use App\Models\WalletHistory;
+use App\Services\PaymentFulfillmentService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -416,31 +416,8 @@ class AssetController extends Controller
             return response()->json(['status' => 'failed', 'message' => 'Payment verification failed.'], 400);
         }
 
-        // Mark as completed and credit seller
-        $purchase->update(['status' => 'completed']);
-        $asset = Asset::find($purchase->purchasable_id);
-        
-        if ($asset) {
-            // Keep both counters aligned: purchase_count is used by ranking/analytics,
-            // while bought_count is already exposed in existing API payloads.
-            $asset->increment('purchase_count');
-            $asset->increment('bought_count');
-            
-            // Credit seller (deduct service charge)
-            $seller = User::find($asset->user_id);
-            $sellerAmount = $asset->price; // service charge goes to platform
-            
-            if ($seller && $seller->wallet) {
-                $seller->wallet->increment('balance', $sellerAmount);
-                WalletHistory::create([
-                    'wallet_id'               => $seller->wallet->id,
-                    'amount'                  => $sellerAmount,
-                    'wallet_history_type_id'  => 1, // credit
-                    'wallet_history_status_id'=> 1, // success
-                    'tx_ref'                  => $tx_ref,
-                ]);
-            }
-        }
+        // Atomically fulfill the purchase (prevents double fulfillment)
+        PaymentFulfillmentService::fulfillAssetPurchase($purchase);
 
         return response()->json([
             'status'  => 'success',

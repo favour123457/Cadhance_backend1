@@ -21,43 +21,6 @@ class WalletsController extends Controller
         return response()->json(WalletHistoriesResource::collection($wallet_histories));
     }
 
-    public function store(Request $request){
-        $token = JWTAuth::parseToken();
-        $user = $token->authenticate();
-
-        $wallet = $user->wallet;
-        $wallet_history_type_id = $request->wallet_history_type_id;
-        $amount = $request->amount;
-        $wallet_history_status_id = $request->wallet_history_status_id;
-
-        if ($wallet_history_type_id == 2) {
-            if ($wallet->balance < $amount) {
-                return response()->json([
-                    'status' => 'failed',
-                    'message' => 'Insufficient balance!'
-                ], 400);
-            }
-        }
-
-        WalletHistory::create([
-            'wallet_id' => $wallet->id,
-            'amount' => $amount,
-            'wallet_history_type_id' => $wallet_history_type_id,
-            'wallet_history_status_id' => $wallet_history_status_id,
-        ]);
-
-        if ($wallet_history_type_id == 1) {
-            $wallet->increment('balance', $amount);
-        }else{
-            $wallet->decrement('balance', $amount);
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Wallet record effected successfully!',
-        ]);
-    }
-
     /**
      * POST /wallet/topup/initiate
      * Body: { "amount": 5, "currency": "USD" (optional, defaults to USD) }
@@ -165,13 +128,12 @@ class WalletsController extends Controller
             ], 400);
         }
 
-        // Mark as successful and credit wallet
-        $history->update(['wallet_history_status_id' => 2]); // successful
-        $history->wallet->increment('balance', $history->amount);
+        // Atomically fulfill the top-up (prevents double-credit from callback + webhook)
+        $fulfilled = fulfillWalletTopup($history);
 
         return response()->json([
             'status'  => 'success',
-            'message' => 'Wallet topped up successfully.',
+            'message' => $fulfilled ? 'Wallet topped up successfully.' : 'Already processed.',
             'amount'  => $history->amount,
             'balance' => $history->wallet->fresh()->balance,
         ]);

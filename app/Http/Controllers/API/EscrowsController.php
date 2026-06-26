@@ -9,6 +9,7 @@ use App\Models\EscrowHistory;
 use App\Http\Resources\EscrowResource;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Models\CustomizationMilestone;
+use App\Models\CustomizationRequest;
 
 
 class EscrowsController extends Controller
@@ -25,21 +26,34 @@ class EscrowsController extends Controller
 
     public function store(Request $request)
     {
+        $validated = $request->validate([
+            'customization_request_id' => 'required|integer|exists:customization_requests,id',
+            'amount'                   => 'required|numeric|min:0.01',
+        ]);
+
         $token = JWTAuth::parseToken();
         $user = $token->authenticate();
 
         $wallet = $user->wallet;
-        if ($wallet->balance < $request->amount) {
+        $amount = (float) $validated['amount'];
+
+        if ($wallet->balance < $amount) {
             return response()->json(['error' => 'Insufficient balance'], 400);
+        }
+
+        $customizationRequest = CustomizationRequest::find($validated['customization_request_id']);
+
+        if (!$customizationRequest || $customizationRequest->user_id != $user->id) {
+            return response()->json(['error' => 'Invalid customization request'], 403);
         }
 
         $escrow = new Escrow();
         $escrow->user_id = $user->id;
-        $escrow->customization_request_id = $request->customization_request_id;
-        $escrow->amount = $request->amount;
+        $escrow->customization_request_id = $validated['customization_request_id'];
+        $escrow->amount = $amount;
         $escrow->save();
 
-        $wallet->decrement('balance', $request->amount);
+        $wallet->decrement('balance', $amount);
 
         EscrowHistory::create([
             'escrow_id' => $escrow->id,
@@ -52,10 +66,14 @@ class EscrowsController extends Controller
 
     public function cancel(Request $request)
     {
+        $validated = $request->validate([
+            'escrow_id' => 'required|integer|exists:escrows,id',
+        ]);
+
         $token = JWTAuth::parseToken();
         $user = $token->authenticate();
 
-        $escrow = Escrow::findOrFail($request->escrow_id);
+        $escrow = Escrow::findOrFail($validated['escrow_id']);
         $customization_request = $escrow->customization_request;
 
         if ($customization_request->user_id != $user->id) {
@@ -89,12 +107,15 @@ class EscrowsController extends Controller
 
     public function debitEscrow(Request $request)
     {
+        $validated = $request->validate([
+            'escrow_id' => 'required|integer|exists:escrows,id',
+            'customization_milestone_id' => 'required|integer|exists:customization_milestones,id',
+        ]);
+
         $token = JWTAuth::parseToken();
         $user = $token->authenticate();
 
-        $customization_milestone_id = $request->customization_milestone_id;
-
-        $escrow = Escrow::findOrFail($request->escrow_id);
+        $escrow = Escrow::findOrFail($validated['escrow_id']);
         $customization_request = $escrow->customization_request;
 
         if ($customization_request->user_id != $user->id) {
@@ -105,18 +126,25 @@ class EscrowsController extends Controller
             return response()->json(['error' => 'Only accepted escrows can be debited'], 400);
         }
 
-        $customization_milestone = CustomizationMilestone::findOrFail($customization_milestone_id);
-        $customization_milestone_price = $customization_milestone->price;
+        $customization_milestone = CustomizationMilestone::findOrFail($validated['customization_milestone_id']);
+        $customization_milestone_price = (float) $customization_milestone->price;
 
-        //debit the escrow amount 
+        if ($escrow->amount < $customization_milestone_price) {
+            return response()->json([
+                'error' => 'Escrow balance is insufficient to cover this milestone',
+                'escrow_balance' => $escrow->amount,
+                'milestone_price' => $customization_milestone_price,
+            ], 400);
+        }
+
+        // Debit the escrow amount
         $escrow->amount -= $customization_milestone_price;
         $escrow->save();
 
-        //credit the designer's wallet
+        // Credit the designer's wallet
         $designer = $customization_request->designer;
         $designer_wallet = $designer->wallet;
         $designer_wallet->increment('balance', $customization_milestone_price);
-
 
         EscrowHistory::create([
             'escrow_id' => $escrow->id,

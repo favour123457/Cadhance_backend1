@@ -8,6 +8,7 @@ use App\Http\Resources\GroupSubscriptionResource;
 use App\Models\Group;
 use App\Models\GroupSubscription;
 use App\Models\Notification;
+use App\Services\PaymentFulfillmentService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -240,30 +241,18 @@ class GroupController extends Controller
             return response()->json(['status' => 'failed', 'message' => 'Payment verification failed.'], 400);
         }
 
-        $subscription->update(['status' => 'completed']);
-        $group = Group::find($subscription->group_id);
-        
-        if ($group) {
-            $group->increment('subscribers_count');
-            
-            // Credit group owner
-            $owner = User::find($group->user_id);
-            if ($owner && $owner->wallet) {
-                $owner->wallet->increment('balance', $group->price);
-                \App\Models\WalletHistory::create([
-                    'wallet_id'               => $owner->wallet->id,
-                    'amount'                  => $group->price,
-                    'wallet_history_type_id'  => 1,
-                    'wallet_history_status_id'=> 1,
-                    'tx_ref'                  => $tx_ref,
+        // Atomically fulfill the subscription (prevents double fulfillment)
+        $fulfilled = PaymentFulfillmentService::fulfillGroupSubscription($subscription);
+
+        if ($fulfilled) {
+            $group = Group::find($subscription->group_id);
+            if ($group) {
+                Notification::create([
+                    'user_id' => $group->user_id,
+                    'title'   => 'New Group Subscriber',
+                    'message' => $subscription->user->name . ' subscribed to "' . $group->title . '"!',
                 ]);
             }
-
-            Notification::create([
-                'user_id' => $group->user_id,
-                'title'   => 'New Group Subscriber',
-                'message' => $subscription->user->name . ' subscribed to "' . $group->title . '"!',
-            ]);
         }
 
         return response()->json(['status' => 'success', 'message' => 'Subscribed successfully!']);

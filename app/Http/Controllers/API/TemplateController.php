@@ -9,7 +9,7 @@ use App\Models\TemplateFile;
 use App\Models\Template;
 use App\Models\User;
 use App\Models\UserPurchase;
-use App\Models\WalletHistory;
+use App\Services\PaymentFulfillmentService;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -365,24 +365,8 @@ class TemplateController extends Controller
             return response()->json(['status' => 'failed', 'message' => 'Payment verification failed.'], 400);
         }
 
-        $purchase->update(['status' => 'completed']);
-        $template = Template::find($purchase->purchasable_id);
-        
-        if ($template) {
-            $template->increment('download_count');
-            $seller = User::find($template->user_id);
-            
-            if ($seller && $seller->wallet) {
-                $seller->wallet->increment('balance', $template->price);
-                WalletHistory::create([
-                    'wallet_id'               => $seller->wallet->id,
-                    'amount'                  => $template->price,
-                    'wallet_history_type_id'  => 1,
-                    'wallet_history_status_id'=> 1,
-                    'tx_ref'                  => $tx_ref,
-                ]);
-            }
-        }
+        // Atomically fulfill the purchase (prevents double fulfillment)
+        PaymentFulfillmentService::fulfillTemplatePurchase($purchase);
 
         return response()->json(['status' => 'success', 'message' => 'Template purchased successfully!']);
     }

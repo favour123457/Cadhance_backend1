@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\WalletHistory;
 use App\Models\Withdrawal;
 use App\Services\FlutterwaveService;
+use App\Services\PaymentFulfillmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -129,7 +130,7 @@ class FlutterwaveWebhookController extends Controller
     }
 
     /**
-     * Process charge.completed events for wallet top-ups.
+     * Process charge.completed events for wallet top-ups and purchases.
      */
     protected function handleChargeWebhook(array $data)
     {
@@ -141,6 +142,42 @@ class FlutterwaveWebhookController extends Controller
             return response()->json(['status' => 'failed', 'message' => 'Missing tx_ref'], 400);
         }
 
+        // Wallet top-ups
+        if (str_starts_with($tx_ref, 'topup_')) {
+            return $this->handleTopupWebhook($tx_ref, $status, $transaction_id);
+        }
+
+        // Purchases and subscriptions
+        if (strtolower($status) !== 'successful') {
+            return response()->json(['status' => 'success', 'message' => 'Charge status ignored']);
+        }
+
+        // Optional server-side verification for extra safety
+        $flutterwave = new FlutterwaveService();
+        $verification = $flutterwave->verifyTransaction($transaction_id);
+        $verifiedStatus = $verification['data']['status'] ?? '';
+
+        if (strtolower($verifiedStatus) !== 'successful') {
+            Log::warning('Charge webhook verification failed', [
+                'tx_ref' => $tx_ref,
+                'transaction_id' => $transaction_id,
+            ]);
+            return response()->json(['status' => 'failed', 'message' => 'Verification failed'], 400);
+        }
+
+        $fulfilled = PaymentFulfillmentService::fulfillFromTxRef($tx_ref);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => $fulfilled ? 'Purchase fulfilled' : 'Already processed or unrecognized',
+        ]);
+    }
+
+    /**
+     * Process charge.completed events for wallet top-ups.
+     */
+    protected function handleTopupWebhook(string $tx_ref, string $status, $transaction_id)
+    {
         $history = WalletHistory::where('tx_ref', $tx_ref)->first();
 
         if (!$history) {
@@ -148,34 +185,28 @@ class FlutterwaveWebhookController extends Controller
             return response()->json(['status' => 'failed', 'message' => 'Transaction not found'], 404);
         }
 
-        // Idempotency guard
-        if ($history->wallet_history_status_id == 2) {
-            return response()->json(['status' => 'success', 'message' => 'Already processed']);
+        if (strtolower($status) !== 'successful') {
+            $history->update(['wallet_history_status_id' => 3]); // Failed
+            return response()->json(['status' => 'success', 'message' => 'Charge status recorded']);
         }
 
-        if (strtolower($status) === 'successful') {
-            // Optional server-side verification for extra safety
-            $flutterwave = new FlutterwaveService();
-            $verification = $flutterwave->verifyTransaction($transaction_id);
-            $verifiedStatus = $verification['data']['status'] ?? '';
+        // Optional server-side verification for extra safety
+        $flutterwave = new FlutterwaveService();
+        $verification = $flutterwave->verifyTransaction($transaction_id);
+        $verifiedStatus = $verification['data']['status'] ?? '';
 
-            if (strtolower($verifiedStatus) !== 'successful') {
-                Log::warning('Charge webhook verification failed', [
-                    'tx_ref' => $tx_ref,
-                    'transaction_id' => $transaction_id,
-                ]);
-                $history->update(['wallet_history_status_id' => 3]); // Failed
-                return response()->json(['status' => 'failed', 'message' => 'Verification failed'], 400);
-            }
-
-            $history->update(['wallet_history_status_id' => 2]); // Success
-            $history->wallet->increment('balance', $history->amount);
-
-            return response()->json(['status' => 'success', 'message' => 'Wallet credited']);
+        if (strtolower($verifiedStatus) !== 'successful') {
+            Log::warning('Charge webhook verification failed', [
+                'tx_ref' => $tx_ref,
+                'transaction_id' => $transaction_id,
+            ]);
+            $history->update(['wallet_history_status_id' => 3]); // Failed
+            return response()->json(['status' => 'failed', 'message' => 'Verification failed'], 400);
         }
 
-        $history->update(['wallet_history_status_id' => 3]); // Failed
-        return response()->json(['status' => 'success', 'message' => 'Charge status recorded']);
+        fulfillWalletTopup($history);
+
+        return response()->json(['status' => 'success', 'message' => 'Wallet credited']);
     }
 
     /**
