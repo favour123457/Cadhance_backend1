@@ -58,7 +58,8 @@ class ProfileResource extends JsonResource
             'skills'                      => $user
                 ? $user->user_skills->map(fn ($us) => $us->skill?->name)->filter()->values()
                 : [],
-            'categories'                  => $this->design_category ? [$this->design_category->name] : [],
+            'categories'                  => $this->design_categories->pluck('name')->values(),
+            'design_category_ids'         => $this->design_categories->pluck('id')->values(),
             'created_at'                  => $this->created_at,
         ];
     }

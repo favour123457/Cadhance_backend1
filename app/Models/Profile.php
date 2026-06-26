@@ -18,6 +18,11 @@ class Profile extends Model
         return $this->belongsTo(DesignCategory::class);
     }
 
+    public function design_categories()
+    {
+        return $this->belongsToMany(DesignCategory::class)->withTimestamps();
+    }
+
     public function primary_role()
     {
         return $this->belongsTo(PrimaryRole::class);

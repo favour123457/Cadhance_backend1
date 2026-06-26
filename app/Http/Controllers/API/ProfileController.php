@@ -57,7 +57,8 @@ class ProfileController extends Controller
         $profile->load([
             'user' => fn($q) => $q->withRatingStats()->with(['country', 'user_skills.skill']),
             'primary_role',
-            'design_category'
+            'design_category',
+            'design_categories'
         ]);
 
         return response()->json(new ProfileResource($profile, true));
@@ -76,7 +77,8 @@ class ProfileController extends Controller
         $profileQuery = Profile::with([
             'user' => fn($q) => $q->withRatingStats()->with(['country', 'user_skills.skill']),
             'primary_role',
-            'design_category'
+            'design_category',
+            'design_categories'
         ])
             ->where('user_id', $user_id);
 
@@ -188,15 +190,15 @@ class ProfileController extends Controller
         if ($request->has('design_category_id') && !is_null($request->design_category_id)) {
             $data['design_category_id'] = $request->design_category_id;
         }
-        
+
         if ($request->has('primary_role_id') && !is_null($request->primary_role_id)) {
             $data['primary_role_id'] = $request->primary_role_id;
         }
-        
+
         if ($request->has('is_studio_name_display_name') && !is_null($request->is_studio_name_display_name)) {
             $data['is_studio_name_display_name'] = $this->toBool($request->is_studio_name_display_name);
         }
-        
+
         if ($request->has('social_links')) {
             $data['social_links'] = $request->input('social_links');
         }
@@ -212,6 +214,23 @@ class ProfileController extends Controller
                 'is_studio_name_display_name' => false,
                 'banner_image' => 'profiles/default_banner.png',
             ], $data));
+        }
+
+        // Sync multiple design categories (up to 5)
+        if ($request->has('design_category_ids')) {
+            $categoryIds = collect($request->input('design_category_ids'))
+                ->map(fn ($id) => (int) $id)
+                ->filter()
+                ->unique()
+                ->slice(0, 5)
+                ->values();
+
+            $profile->design_categories()->sync($categoryIds);
+
+            // Keep the legacy single category column in sync for backward compatibility
+            if ($categoryIds->isNotEmpty() && !$request->has('design_category_id')) {
+                $profile->update(['design_category_id' => $categoryIds->first()]);
+            }
         }
 
         if ($request->hasFile('banner')) {
