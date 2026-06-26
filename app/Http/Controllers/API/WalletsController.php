@@ -5,6 +5,8 @@ namespace App\Http\Controllers\API;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\WalletHistoriesResource;
 use App\Models\WalletHistory;
+use App\Models\WalletHistoryStatus;
+use App\Models\WalletHistoryType;
 use App\Services\FlutterwaveService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -43,8 +45,8 @@ class WalletsController extends Controller
         WalletHistory::create([
             'wallet_id'               => $user->wallet->id,
             'amount'                  => $amount,
-            'wallet_history_type_id'  => 1,   // credit
-            'wallet_history_status_id'=> 1,   // pending
+            'wallet_history_type_id'  => WalletHistoryType::CREDIT,
+            'wallet_history_status_id'=> WalletHistoryStatus::PENDING,
             'tx_ref'                  => $tx_ref,
             'currency'                => $currency,
         ]);
@@ -106,7 +108,7 @@ class WalletsController extends Controller
         }
 
         // Already processed — idempotency guard
-        if ($history->wallet_history_status_id === 2) {
+        if ($history->wallet_history_status_id === WalletHistoryStatus::SUCCESS) {
             return response()->json(['status' => 'success', 'message' => 'Already processed.']);
         }
 
@@ -121,7 +123,7 @@ class WalletsController extends Controller
             ($data['status'] ?? '') !== 'successful' ||
             ($data['tx_ref'] ?? '') !== $tx_ref
         ) {
-            $history->update(['wallet_history_status_id' => 3]); // failed
+            $history->update(['wallet_history_status_id' => WalletHistoryStatus::FAILED]);
             return response()->json([
                 'status'  => 'failed',
                 'message' => 'Payment verification failed.',

@@ -10,6 +10,8 @@ use App\Models\BankAccount;
 use App\Models\Currency;
 use App\Models\MobileMoneyAccount;
 use App\Models\WalletHistory;
+use App\Models\WalletHistoryStatus;
+use App\Models\WalletHistoryType;
 use App\Models\Withdrawal;
 use Illuminate\Http\Request;
 use Tymon\JWTAuth\Facades\JWTAuth;
@@ -56,7 +58,7 @@ class WithdrawalsController extends Controller
 
         $beneficiary_account = null;
         $currency = null;
-        $withdrawal_status_id = 2; // Start as "processing" for auto withdrawal
+        $withdrawal_status_id = Withdrawal::PROCESSING; // Start as "processing" for auto withdrawal
 
         DB::beginTransaction();
 
@@ -75,6 +77,14 @@ class WithdrawalsController extends Controller
                     ], 403);
                 }
 
+                $networkCode = $mobile_money->network_code ?? $mobile_money->provider;
+                if (empty($networkCode)) {
+                    return response()->json([
+                        'status'  => 'failed',
+                        'message' => 'Mobile money network code is missing. Please update your account.',
+                    ], 422);
+                }
+
                 $beneficiary_account = $mobile_money;
                 $currency = $mobile_money->currency_id ? Currency::find($mobile_money->currency_id) : null;
 
@@ -90,7 +100,7 @@ class WithdrawalsController extends Controller
 
                 $transferResp = $this->flutterwave->initiateMobileMoneyTransfer(
                     $mobile_money->account_number, // phone number
-                    $mobile_money->network_code ?? $mobile_money->provider, // network code
+                    $networkCode, // network code
                     (float) $convertedAmount,
                     $targetCurrency,
                     $reason,
@@ -98,17 +108,17 @@ class WithdrawalsController extends Controller
                 );
 
                 // Determine status from Flutterwave response
-                $withdrawal_status_id = 1; // Pending (manual processing fallback)
+                $withdrawal_status_id = Withdrawal::PENDING; // Pending (manual processing fallback)
                 $failure_reason = null;
                 if (isset($transferResp['status']) && $transferResp['status'] === 'success') {
                     $dataStatus = $transferResp['data']['status'] ?? null;
                     if ($dataStatus === 'FAILED') {
-                        $withdrawal_status_id = 4; // Failed
+                        $withdrawal_status_id = Withdrawal::FAILED;
                         $failure_reason = $transferResp['data']['complete_message'] ?? 'Transfer failed';
                     } elseif ($dataStatus === 'SUCCESS') {
-                        $withdrawal_status_id = 3; // Completed
+                        $withdrawal_status_id = Withdrawal::COMPLETED;
                     } else {
-                        $withdrawal_status_id = 2; // Processing (queued/pending at Flutterwave)
+                        $withdrawal_status_id = Withdrawal::PROCESSING;
                     }
                 } else {
                     $failure_reason = $transferResp['message'] ?? 'Flutterwave API error';
@@ -128,7 +138,7 @@ class WithdrawalsController extends Controller
                 ];
 
                 // Refund wallet on hard Flutterwave failure
-                if ($withdrawal_status_id == 4) {
+                if ($withdrawal_status_id == Withdrawal::FAILED) {
                     $wallet->increment('balance', $amount);
                 }
 
@@ -145,7 +155,7 @@ class WithdrawalsController extends Controller
                     'flutterwave_response'     => json_encode($transferResp),
                     'failure_reason'           => $failure_reason,
                     'auto_processed'           => true,
-                    'processed_at'             => $withdrawal_status_id == 3 ? now() : null,
+                    'processed_at'             => $withdrawal_status_id == Withdrawal::COMPLETED ? now() : null,
                 ]);
 
             } else {
@@ -199,17 +209,17 @@ class WithdrawalsController extends Controller
                 );
 
                 // Determine status from Flutterwave response
-                $withdrawal_status_id = 1; // Pending (manual processing fallback)
+                $withdrawal_status_id = Withdrawal::PENDING; // Pending (manual processing fallback)
                 $failure_reason = null;
                 if (isset($transferResp['status']) && $transferResp['status'] === 'success') {
                     $dataStatus = $transferResp['data']['status'] ?? null;
                     if ($dataStatus === 'FAILED') {
-                        $withdrawal_status_id = 4; // Failed
+                        $withdrawal_status_id = Withdrawal::FAILED;
                         $failure_reason = $transferResp['data']['complete_message'] ?? 'Transfer failed';
                     } elseif ($dataStatus === 'SUCCESS') {
-                        $withdrawal_status_id = 3; // Completed
+                        $withdrawal_status_id = Withdrawal::COMPLETED;
                     } else {
-                        $withdrawal_status_id = 2; // Processing (queued/pending at Flutterwave)
+                        $withdrawal_status_id = Withdrawal::PROCESSING;
                     }
                 } else {
                     $failure_reason = $transferResp['message'] ?? 'Flutterwave API error';
@@ -229,7 +239,7 @@ class WithdrawalsController extends Controller
                 ];
 
                 // Refund wallet on hard Flutterwave failure
-                if ($withdrawal_status_id == 4) {
+                if ($withdrawal_status_id == Withdrawal::FAILED) {
                     $wallet->increment('balance', $amount);
                 }
 
@@ -246,21 +256,21 @@ class WithdrawalsController extends Controller
                     'flutterwave_response'     => json_encode($transferResp),
                     'failure_reason'           => $failure_reason,
                     'auto_processed'           => true,
-                    'processed_at'             => $withdrawal_status_id == 3 ? now() : null,
+                    'processed_at'             => $withdrawal_status_id == Withdrawal::COMPLETED ? now() : null,
                 ]);
             }
 
             // Create wallet history
             $walletHistoryStatusId = match ($withdrawal_status_id) {
-                3 => 2, // Completed withdrawal -> Success
-                4 => 3, // Failed withdrawal -> Failed
-                default => 1, // Pending/Processing -> Pending
+                Withdrawal::COMPLETED => WalletHistoryStatus::SUCCESS,
+                Withdrawal::FAILED    => WalletHistoryStatus::FAILED,
+                default               => WalletHistoryStatus::PENDING,
             };
 
             WalletHistory::create([
                 'wallet_id'                => $wallet->id,
                 'amount'                   => $amount,
-                'wallet_history_type_id'   => 2, // Withdrawal
+                'wallet_history_type_id'   => WalletHistoryType::DEBIT,
                 'wallet_history_status_id' => $walletHistoryStatusId,
             ]);
 
@@ -268,10 +278,10 @@ class WithdrawalsController extends Controller
 
             // Send email notification
             $statusText = match ($withdrawal_status_id) {
-                3 => 'Completed',
-                4 => 'Failed',
-                2 => 'Processing',
-                default => 'Pending',
+                Withdrawal::COMPLETED  => 'Completed',
+                Withdrawal::FAILED     => 'Failed',
+                Withdrawal::PROCESSING => 'Processing',
+                default                => 'Pending',
             };
             $accountInfo = $payment_method === 'mobile_money' 
                 ? '<li><strong>Provider:</strong> ' . $beneficiary_account->provider . '</li>
@@ -290,7 +300,7 @@ class WithdrawalsController extends Controller
             <li><strong>Status:</strong> ' . $statusText . '</li>
             <li><strong>Reference:</strong> ' . $reference . '</li>
         </ul>
-        ' . ($withdrawal_status_id == 3 
+        ' . ($withdrawal_status_id == Withdrawal::COMPLETED 
             ? '<p>The funds should reflect in your account shortly, depending on processing time.</p>' 
             : '<p>Your withdrawal is being processed. You will receive notification once completed.</p>') . '
         <p>If you did not initiate this withdrawal, contact our support team immediately.</p>
@@ -303,8 +313,8 @@ class WithdrawalsController extends Controller
                 Mail::send(new GeneralMail($user->name, $user->email, 'Withdrawal Request Received', $msg));
             }
 
-            // If failed, notify admin via email (only if admin email is set and valid)
-            if ($withdrawal_status_id == 1 && config('app.admin_email') && filter_var(config('app.admin_email'), FILTER_VALIDATE_EMAIL)) {
+            // If pending (manual processing fallback), notify admin via email
+            if ($withdrawal_status_id == Withdrawal::PENDING && config('app.admin_email') && filter_var(config('app.admin_email'), FILTER_VALIDATE_EMAIL)) {
                 $adminMsg = '
             <p>This is to notify you that an <strong>automatic withdrawal</strong> failed and requires manual processing.</p>
             <p><strong>Failure Details:</strong></p>
@@ -324,7 +334,7 @@ class WithdrawalsController extends Controller
 
             return response()->json([
                 'status'     => 'success',
-                'message'    => $withdrawal_status_id == 3 
+                'message'    => $withdrawal_status_id == Withdrawal::COMPLETED 
                     ? 'Withdrawal processed successfully!' 
                     : 'Withdrawal request submitted and is being processed!',
                 'withdrawal' => new WithdrawalHistoryResource($withdrawal),

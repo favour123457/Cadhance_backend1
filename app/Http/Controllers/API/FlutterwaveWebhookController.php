@@ -4,6 +4,8 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\WalletHistory;
+use App\Models\WalletHistoryStatus;
+use App\Models\WalletHistoryType;
 use App\Models\Withdrawal;
 use App\Services\FlutterwaveService;
 use App\Services\PaymentFulfillmentService;
@@ -80,7 +82,7 @@ class FlutterwaveWebhookController extends Controller
         }
 
         // Idempotency guard
-        if ($withdrawal->withdrawal_status_id == 3) {
+        if ($withdrawal->withdrawal_status_id == Withdrawal::COMPLETED) {
             return response()->json(['status' => 'success', 'message' => 'Already completed']);
         }
 
@@ -91,35 +93,35 @@ class FlutterwaveWebhookController extends Controller
             case 'SUCCESSFUL':
             case 'SUCCESS':
                 $withdrawal->update([
-                    'withdrawal_status_id' => 3, // Completed
+                    'withdrawal_status_id' => Withdrawal::COMPLETED,
                     'processed_at' => now(),
                     'failure_reason' => null,
                 ]);
-                $this->updateWalletHistoryStatus($withdrawal, 2); // Success
+                $this->updateWalletHistoryStatus($withdrawal, WalletHistoryStatus::SUCCESS);
                 break;
 
             case 'FAILED':
             case 'FAIL':
                 // Refund if not already refunded
-                if ($withdrawal->withdrawal_status_id != 4 && $withdrawal->user->wallet) {
+                if ($withdrawal->withdrawal_status_id != Withdrawal::FAILED && $withdrawal->user->wallet) {
                     $withdrawal->user->wallet->increment('balance', $withdrawal->amount);
                 }
 
                 $withdrawal->update([
-                    'withdrawal_status_id' => 4, // Failed
+                    'withdrawal_status_id' => Withdrawal::FAILED,
                     'failure_reason' => $completeMessage ?? $data['status'] ?? 'Transfer failed',
                 ]);
-                $this->updateWalletHistoryStatus($withdrawal, 3); // Failed
+                $this->updateWalletHistoryStatus($withdrawal, WalletHistoryStatus::FAILED);
                 break;
 
             case 'PENDING':
             case 'PROCESSING':
             case 'QUEUED':
                 $withdrawal->update([
-                    'withdrawal_status_id' => 2, // Processing
+                    'withdrawal_status_id' => Withdrawal::PROCESSING,
                     'failure_reason' => null,
                 ]);
-                $this->updateWalletHistoryStatus($withdrawal, 1); // Pending
+                $this->updateWalletHistoryStatus($withdrawal, WalletHistoryStatus::PENDING);
                 break;
 
             default:
@@ -186,7 +188,7 @@ class FlutterwaveWebhookController extends Controller
         }
 
         if (strtolower($status) !== 'successful') {
-            $history->update(['wallet_history_status_id' => 3]); // Failed
+            $history->update(['wallet_history_status_id' => WalletHistoryStatus::FAILED]);
             return response()->json(['status' => 'success', 'message' => 'Charge status recorded']);
         }
 
@@ -200,7 +202,7 @@ class FlutterwaveWebhookController extends Controller
                 'tx_ref' => $tx_ref,
                 'transaction_id' => $transaction_id,
             ]);
-            $history->update(['wallet_history_status_id' => 3]); // Failed
+            $history->update(['wallet_history_status_id' => WalletHistoryStatus::FAILED]);
             return response()->json(['status' => 'failed', 'message' => 'Verification failed'], 400);
         }
 
@@ -216,7 +218,7 @@ class FlutterwaveWebhookController extends Controller
     {
         WalletHistory::where('wallet_id', $withdrawal->user->wallet->id ?? null)
             ->where('amount', $withdrawal->amount)
-            ->where('wallet_history_type_id', 2) // Withdrawal
+            ->where('wallet_history_type_id', WalletHistoryType::DEBIT)
             ->where('created_at', '>=', $withdrawal->created_at->subMinutes(5))
             ->latest()
             ->first()

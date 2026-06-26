@@ -371,14 +371,17 @@ if (!function_exists('fulfillWalletTopup')) {
      */
     function fulfillWalletTopup(\App\Models\WalletHistory $history): bool
     {
+        $pending = \App\Models\WalletHistoryStatus::PENDING;
+        $success = \App\Models\WalletHistoryStatus::SUCCESS;
+
         // Only act on pending histories
-        if ($history->wallet_history_status_id != 1) {
-            return $history->wallet_history_status_id == 2;
+        if ($history->wallet_history_status_id != $pending) {
+            return $history->wallet_history_status_id == $success;
         }
 
         $affected = \App\Models\WalletHistory::where('id', $history->id)
-            ->where('wallet_history_status_id', 1) // pending
-            ->update(['wallet_history_status_id' => 2]); // success
+            ->where('wallet_history_status_id', $pending)
+            ->update(['wallet_history_status_id' => $success]);
 
         if ($affected > 0) {
             $history->wallet->increment('balance', $history->amount);

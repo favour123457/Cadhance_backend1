@@ -6,6 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class Withdrawal extends Model
 {
+    public const PENDING    = 1;
+    public const PROCESSING = 2;
+    public const COMPLETED  = 3;
+    public const FAILED     = 4;
+
     protected $fillable = [
         'user_id',
         'bank_account_id',

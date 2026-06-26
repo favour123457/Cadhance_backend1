@@ -9,6 +9,8 @@ use App\Models\Template;
 use App\Models\User;
 use App\Models\UserPurchase;
 use App\Models\WalletHistory;
+use App\Models\WalletHistoryStatus;
+use App\Models\WalletHistoryType;
 use Illuminate\Support\Facades\Log;
 
 class PaymentFulfillmentService
@@ -45,8 +47,8 @@ class PaymentFulfillmentService
                 WalletHistory::create([
                     'wallet_id'                => $seller->wallet->id,
                     'amount'                   => $sellerAmount,
-                    'wallet_history_type_id'   => 1, // credit
-                    'wallet_history_status_id' => 2, // success
+                    'wallet_history_type_id'   => WalletHistoryType::CREDIT,
+                    'wallet_history_status_id' => WalletHistoryStatus::SUCCESS,
                     'tx_ref'                   => $purchase->tx_ref,
                 ]);
             }

@@ -21,7 +21,7 @@ class MobileMoneyController extends Controller
         $user = JWTAuth::parseToken()->authenticate();
         $request->validate([
             'provider'       => 'required|string|max:100',
-            'network_code'   => 'nullable|string|max:50',
+            'network_code'   => 'required|string|max:50|in:MTN,VDF,AIRTEL,TIGO,MPESA,ORANGE',
             'account_name'   => 'required|string|max:200',
             'account_number' => 'required|string|max:50',
             'currency_id'    => 'nullable|integer',

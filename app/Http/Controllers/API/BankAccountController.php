@@ -30,15 +30,23 @@ class BankAccountController extends Controller
 
     public function store(Request $request)
     {
+        $validated = $request->validate([
+            'bank_id'                => 'required_without:bank_code|integer|exists:banks,id',
+            'bank_code'              => 'required_without:bank_id|string|max:50',
+            'bank_name'              => 'required|string|max:200',
+            'account_number'         => 'required|string|max:50',
+            'currency_id'            => 'nullable|integer',
+            'destination_branch_code'=> 'nullable|string|max:50',
+        ]);
+
         $token = JWTAuth::parseToken();
         $user = $token->authenticate();
 
-        $bank_id = $request->bank_id ?? 0;
-        $bank_name = $request->bank_name;
-        $account_number = $request->account_number;
-        $currency_id = $request->currency_id;
-        $destination_branch_code = $request->destination_branch_code;
-        // $account_name = $request->account_name;
+        $bank_id = $validated['bank_id'] ?? 0;
+        $bank_name = $validated['bank_name'];
+        $account_number = $validated['account_number'];
+        $currency_id = $validated['currency_id'] ?? null;
+        $destination_branch_code = $validated['destination_branch_code'] ?? null;
         $account_name = $user->name;
 
         // Resolve bank code from Bank model or request
@@ -53,59 +61,14 @@ class BankAccountController extends Controller
             }
         }
         if (!$bank_code) {
-            $bank_code = $request->bank_code;
+            $bank_code = $validated['bank_code'];
         }
 
-
-        // //for nigerians
-        // if ($user->country_id == 161) {
-        //     if ($bank_id != 0) {
-        //         $bank = Bank::find($bank_id);
-        //         if ($bank) {
-        //             $bank_name = $bank->name;
-        //         } else {
-        //             return response()->json([
-        //                 'status' => 'failed',
-        //                 'message' => 'Invalid Bank!'
-        //             ], 400);
-        //         }
-        //     }
-
-
-        //     // account name must match the user's name
-        //     $response = Http::withHeaders([
-        //         'Authorization' => 'Bearer ' . config('paystack.secretKey'),
-        //     ])->get("https://api.paystack.co/bank/resolve?account_number=" . $account_number . "&bank_code=" . $bank->code . "");
-
-        //     $data = $response->json();
-
-        //     if ($data['status'] != true) {
-        //         return response()->json([
-        //             'status' => 'failed',
-        //             'message' => 'Invalid account number or bank!',
-        //         ], 400);
-        //     }
-
-        //     $account_name = strtoupper(trim($data['data']['account_name']));
-        //     $userFullName = strtoupper(trim($user->name));
-        //     $userFullNameReversed = strtoupper(trim($user->last_name . ' ' . $user->first_name));
-
-        //     // Check if account name matches either order
-        //     $exactMatch = ($account_name === $userFullName) || ($account_name === $userFullNameReversed);
-
-        //     // Check if account name contains both names (for cases with middle names or extra spaces)
-        //     $userFirstName = strtoupper(trim($user->first_name));
-        //     $userLastName = strtoupper(trim($user->last_name));
-        //     $containsBothNames = str_contains($account_name, $userFirstName) && str_contains($account_name, $userLastName);
-
-        //     if (!$exactMatch && !$containsBothNames) {
-        //         return response()->json([
-        //             'status' => 'failed',
-        //             'message' => 'Account name does not match user name!',
-        //         ], 400);
-        //     }
-        // }
-
+        // Verify account details before saving
+        $verification = $this->verifyBankAccount($account_number, $bank_code, $user->country_id);
+        if ($verification !== true) {
+            return $verification;
+        }
 
         $bank_account = BankAccount::create([
             'user_id' => $user->id,
@@ -172,15 +135,10 @@ class BankAccountController extends Controller
             $bank_code = $request->bank_code ?? $bank_account->bank_code;
         }
 
-        // Optional account verification via Flutterwave for Nigerian accounts
-        if ($user->country_id == 161 && $bank_code && $account_number) {
-            $resolve = $this->flutterwave->resolveAccount($account_number, $bank_code);
-            if (!isset($resolve['status']) || $resolve['status'] !== 'success') {
-                return response()->json([
-                    'status' => 'failed',
-                    'message' => 'Invalid account number or bank!',
-                ], 400);
-            }
+        // Verify account details before saving
+        $verification = $this->verifyBankAccount($account_number, $bank_code, $user->country_id);
+        if ($verification !== true) {
+            return $verification;
         }
 
         $bank_account->update([
@@ -227,5 +185,28 @@ class BankAccountController extends Controller
             'status' => 'success',
             'message' => 'Bank account deleted successfully!',
         ]);
+    }
+
+    /**
+     * Verify a bank account via Flutterwave before saving.
+     * Currently enforced for Nigerian accounts (country_id 161) when a bank code is available.
+     * Returns true on success or a JsonResponse on failure.
+     */
+    private function verifyBankAccount(string $account_number, ?string $bank_code, ?int $country_id)
+    {
+        if ($country_id != 161 || empty($bank_code)) {
+            return true;
+        }
+
+        $resolve = $this->flutterwave->resolveAccount($account_number, $bank_code);
+
+        if (!isset($resolve['status']) || $resolve['status'] !== 'success') {
+            return response()->json([
+                'status'  => 'failed',
+                'message' => 'Invalid account number or bank!',
+            ], 400);
+        }
+
+        return true;
     }
 }

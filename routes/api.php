@@ -147,7 +147,7 @@ Route::middleware('jwt.auth')->group(function () {
         Route::post('/destroy', [AssetController::class, 'destroy']);
         Route::post('/file/add', [AssetController::class, 'addFile']);
         Route::post('/file/remove', [AssetController::class, 'removeFile']);
-        Route::post('/purchase', [AssetController::class, 'purchaseAsset']);
+        Route::post('/purchase', [AssetController::class, 'purchaseAsset'])->middleware('throttle:10,1');
         Route::post('/toggle-favorite', [AssetController::class, 'toggleFavorite']);
         Route::post('/apply-for-customization', [AssetController::class, 'applyForCustomizationRole']);
         Route::get('/customization-designers', [AssetController::class, 'getCustomizationDesigners']);
@@ -162,7 +162,7 @@ Route::middleware('jwt.auth')->group(function () {
         Route::post('/destroy', [TemplateController::class, 'destroy']);
         Route::post('/file/add', [TemplateController::class, 'addFile']);
         Route::post('/file/remove', [TemplateController::class, 'removeFile']);
-        Route::post('/purchase', [TemplateController::class, 'purchaseTemplate']);
+        Route::post('/purchase', [TemplateController::class, 'purchaseTemplate'])->middleware('throttle:10,1');
         Route::get('/file/{file_id}/download', [TemplateController::class, 'downloadTemplateFile']);
     });
 
@@ -172,7 +172,7 @@ Route::middleware('jwt.auth')->group(function () {
         Route::post('/store', [GroupController::class, 'store']);
         Route::post('/update', [GroupController::class, 'update']);
         Route::post('/destroy', [GroupController::class, 'destroy']);
-        Route::post('/subscribe', [GroupController::class, 'subscribe']);
+        Route::post('/subscribe', [GroupController::class, 'subscribe'])->middleware('throttle:10,1');
         Route::post('/unsubscribe', [GroupController::class, 'unsubscribe']);
         Route::get('/my-subscriptions', [GroupController::class, 'mySubscriptions']);
     });
@@ -221,20 +221,20 @@ Route::middleware('jwt.auth')->group(function () {
     //route for wallet
     Route::prefix('wallet')->group(function () {
         Route::get('/histories', [WalletsController::class, 'histories']);
-        Route::post('/topup/initiate', [WalletsController::class, 'initiateTopup']);
+        Route::post('/topup/initiate', [WalletsController::class, 'initiateTopup'])->middleware('throttle:10,1');
     });
 
     //route for escrows
     Route::prefix('escrows')->group(function () {
         Route::get('/', [EscrowsController::class, 'index']);
-        Route::post('/store', [EscrowsController::class, 'store']);
-        Route::post('/cancel', [EscrowsController::class, 'cancel']);
-        Route::post('/debit', [EscrowsController::class, 'debitEscrow']);
+        Route::post('/store', [EscrowsController::class, 'store'])->middleware('throttle:10,1');
+        Route::post('/cancel', [EscrowsController::class, 'cancel'])->middleware('throttle:10,1');
+        Route::post('/debit', [EscrowsController::class, 'debitEscrow'])->middleware('throttle:10,1');
     });
 
     //route for withdrawals
     Route::prefix('withdrawals')->group(function () {
-        Route::post('/store', [WithdrawalsController::class, 'store']);
+        Route::post('/store', [WithdrawalsController::class, 'store'])->middleware('throttle:5,1');
         Route::get('/histories', [WithdrawalsController::class, 'histories']);
         Route::post('/verify-receiver', [WithdrawalsController::class, 'verifyReceiver']);
     });
