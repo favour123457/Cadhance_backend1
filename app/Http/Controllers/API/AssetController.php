@@ -108,6 +108,35 @@ class AssetController extends Controller
         return response()->json(AssetResource::collection($assets));
     }
 
+    /**
+     * Get public assets for a specific user profile.
+     * GET /assets/user/{user_id}
+     */
+    public function getUserAssets($user_id)
+    {
+        if (!is_numeric($user_id) || (int) $user_id <= 0) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'Invalid user ID.'
+            ], 400);
+        }
+
+        $assets = Asset::with([
+                'user' => fn($q) => $q->withRatingStats()->with('country'),
+                'design_category',
+                'license_type',
+                'asset_status',
+                'asset_files'
+            ])
+            ->where('user_id', $user_id)
+            ->where('asset_status_id', 1)
+            ->where('visibility', true)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json(AssetResource::collection($assets));
+    }
+
     public function store(Request $request)
     {
         $token = JWTAuth::parseToken();

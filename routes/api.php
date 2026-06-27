@@ -57,8 +57,10 @@ Route::prefix('dashboard')->group(function () {
 Route::get('/assets', [AssetController::class, 'index']);
 Route::get('/assets/most-liked', [AssetController::class, 'mostLiked']);
 Route::get('/assets/show/{id}', [AssetController::class, 'show']);
+Route::get('/assets/user/{user_id}', [AssetController::class, 'getUserAssets'])->where('user_id', '[0-9]+');
 Route::get('/templates', [TemplateController::class, 'index']);
 Route::get('/templates/show/{id}', [TemplateController::class, 'show']);
+Route::get('/templates/user/{user_id}', [TemplateController::class, 'getUserTemplates'])->where('user_id', '[0-9]+');
 Route::get('/groups', [GroupController::class, 'index']);
 Route::get('/groups/show/{id}', [GroupController::class, 'show']);
 Route::get('/jobs', [SiteJobController::class, 'index']);

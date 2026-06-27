@@ -74,6 +74,32 @@ class TemplateController extends Controller
         return response()->json(TemplateResource::collection($templates));
     }
 
+    /**
+     * Get public templates for a specific user profile.
+     * GET /templates/user/{user_id}
+     */
+    public function getUserTemplates($user_id)
+    {
+        if (!is_numeric($user_id) || (int) $user_id <= 0) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'Invalid user ID.'
+            ], 400);
+        }
+
+        $templates = Template::with([
+                'user' => fn($q) => $q->withRatingStats()->with('country'),
+                'template_status',
+                'template_files'
+            ])
+            ->where('user_id', $user_id)
+            ->where('template_status_id', 1)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json(TemplateResource::collection($templates));
+    }
+
     public function store(Request $request)
     {
         $token = JWTAuth::parseToken();
