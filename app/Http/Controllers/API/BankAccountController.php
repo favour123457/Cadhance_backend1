@@ -37,6 +37,20 @@ class BankAccountController extends Controller
             'account_number'         => 'required|string|max:50',
             'currency_id'            => 'nullable|integer',
             'destination_branch_code'=> 'nullable|string|max:50',
+            'recipient_email'        => 'nullable|email|max:200',
+            'recipient_address'      => 'nullable|string|max:500',
+            'recipient_city'         => 'nullable|string|max:100',
+            'recipient_country'      => 'nullable|string|max:100',
+            'recipient_phone'        => 'nullable|string|max:50',
+            'account_type'           => 'nullable|string|max:50',
+            'routing_number'         => 'nullable|string|max:50',
+            'swift_code'             => 'nullable|string|max:50',
+            'postal_code'            => 'nullable|string|max:50',
+            'bank_branch'            => 'nullable|string|max:200',
+            'beneficiary_country'    => 'nullable|string|max:100',
+            'sender_id_type'         => 'nullable|string|max:100',
+            'sender_id_number'       => 'nullable|string|max:100',
+            'transfer_purpose_code'  => 'nullable|string|max:100',
         ]);
 
         $token = JWTAuth::parseToken();
@@ -47,7 +61,24 @@ class BankAccountController extends Controller
         $account_number = $validated['account_number'];
         $currency_id = $validated['currency_id'] ?? null;
         $destination_branch_code = $validated['destination_branch_code'] ?? null;
-        $account_name = $user->name;
+        $account_name = $validated['account_name'] ?? $user->name;
+
+        $extraFields = [
+            'recipient_email'       => $validated['recipient_email'] ?? null,
+            'recipient_address'     => $validated['recipient_address'] ?? null,
+            'recipient_city'        => $validated['recipient_city'] ?? null,
+            'recipient_country'     => $validated['recipient_country'] ?? null,
+            'recipient_phone'       => $validated['recipient_phone'] ?? null,
+            'account_type'          => $validated['account_type'] ?? null,
+            'routing_number'        => $validated['routing_number'] ?? null,
+            'swift_code'            => $validated['swift_code'] ?? null,
+            'postal_code'           => $validated['postal_code'] ?? null,
+            'bank_branch'           => $validated['bank_branch'] ?? null,
+            'beneficiary_country'   => $validated['beneficiary_country'] ?? null,
+            'sender_id_type'        => $validated['sender_id_type'] ?? null,
+            'sender_id_number'      => $validated['sender_id_number'] ?? null,
+            'transfer_purpose_code' => $validated['transfer_purpose_code'] ?? null,
+        ];
 
         // Resolve bank code from Bank model or request
         $bank_code = null;
@@ -70,7 +101,7 @@ class BankAccountController extends Controller
             return $verification;
         }
 
-        $bank_account = BankAccount::create([
+        $bank_account = BankAccount::create(array_merge([
             'user_id' => $user->id,
             'bank_id' => $bank_id,
             'currency_id' => $currency_id,
@@ -80,7 +111,7 @@ class BankAccountController extends Controller
             'account_name' => $account_name,
             'destination_branch_code' => $destination_branch_code,
             'is_deleted' => 0,
-        ]);
+        ], $extraFields));
 
         return response()->json(new BankAccountResource($bank_account));
     }
@@ -96,8 +127,7 @@ class BankAccountController extends Controller
         $account_number = $request->account_number;
         $currency_id = $request->currency_id;
         $destination_branch_code = $request->destination_branch_code;
-        // $account_name = $request->account_name;
-        $account_name = $user->name;
+        $account_name = $request->account_name ?? $user->name;
 
         $bank_account = BankAccount::find($bank_account_id);
 
@@ -141,7 +171,7 @@ class BankAccountController extends Controller
             return $verification;
         }
 
-        $bank_account->update([
+        $bank_account->update(array_merge([
             'bank_id' => $bank_id,
             'currency_id' => $currency_id,
             'bank_name' => $bank_name,
@@ -149,7 +179,22 @@ class BankAccountController extends Controller
             'account_number' => $account_number,
             'account_name' => $account_name,
             'destination_branch_code' => $destination_branch_code,
-        ]);
+        ], [
+            'recipient_email'       => $request->recipient_email ?? $bank_account->recipient_email,
+            'recipient_address'     => $request->recipient_address ?? $bank_account->recipient_address,
+            'recipient_city'        => $request->recipient_city ?? $bank_account->recipient_city,
+            'recipient_country'     => $request->recipient_country ?? $bank_account->recipient_country,
+            'recipient_phone'       => $request->recipient_phone ?? $bank_account->recipient_phone,
+            'account_type'          => $request->account_type ?? $bank_account->account_type,
+            'routing_number'        => $request->routing_number ?? $bank_account->routing_number,
+            'swift_code'            => $request->swift_code ?? $bank_account->swift_code,
+            'postal_code'           => $request->postal_code ?? $bank_account->postal_code,
+            'bank_branch'           => $request->bank_branch ?? $bank_account->bank_branch,
+            'beneficiary_country'   => $request->beneficiary_country ?? $bank_account->beneficiary_country,
+            'sender_id_type'        => $request->sender_id_type ?? $bank_account->sender_id_type,
+            'sender_id_number'      => $request->sender_id_number ?? $bank_account->sender_id_number,
+            'transfer_purpose_code' => $request->transfer_purpose_code ?? $bank_account->transfer_purpose_code,
+        ]));
 
         return response()->json(new BankAccountResource($bank_account));
     }

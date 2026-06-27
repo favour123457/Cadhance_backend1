@@ -52,7 +52,8 @@ class FlutterwaveService
         string $currency = 'NGN',
         string $narration = '',
         string $reference = null,
-        ?string $destination_branch_code = null
+        ?string $destination_branch_code = null,
+        array  $meta = []
     ): array {
         $reference = $reference ?? 'fw_' . Str::random(16);
 
@@ -71,6 +72,11 @@ class FlutterwaveService
             $payload['destination_branch_code'] = $destination_branch_code;
         }
 
+        // Beneficiary metadata required by some countries/regulators
+        if (!empty($meta)) {
+            $payload['meta'] = $meta;
+        }
+
         $resp = Http::withHeaders($this->headers())
             ->post($this->base . '/transfers', $payload);
 
@@ -87,7 +93,8 @@ class FlutterwaveService
         float  $amount,
         string $currency,
         string $narration = '',
-        string $reference = null
+        string $reference = null,
+        array  $meta = []
     ): array {
         $reference = $reference ?? 'fw_mm_' . Str::random(16);
 
@@ -100,6 +107,10 @@ class FlutterwaveService
             'reference'      => $reference,
             'debit_currency' => $currency,
         ];
+
+        if (!empty($meta)) {
+            $payload['meta'] = $meta;
+        }
 
         $resp = Http::withHeaders($this->headers())
             ->post($this->base . '/transfers', $payload);

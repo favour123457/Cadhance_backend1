@@ -14,6 +14,9 @@ class MobileMoneyAccount extends Model
         'account_name',
         'account_number',
         'is_verified',
+        'recipient_address',
+        'recipient_email',
+        'recipient_country',
     ];
 
     public function user()

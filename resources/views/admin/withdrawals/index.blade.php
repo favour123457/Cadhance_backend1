@@ -173,6 +173,7 @@
                                         </thead>
                                         <tbody>
                                             @forelse($bankWithdrawals as $withdrawal)
+                                                @php $missing = \App\Http\Controllers\Admin\WithdrawalController::missingRequiredFields($withdrawal); @endphp
                                                 <tr>
                                                     <td><input type="checkbox" name="ids[]" value="{{ $withdrawal->id }}" class="bank-checkbox" /></td>
                                                     <td>
@@ -185,7 +186,12 @@
                                                     <td>{{ $withdrawal->bankAccount->account_name ?? 'N/A' }}</td>
                                                     <td><strong>{{ showMoney($withdrawal->amount) }}</strong></td>
                                                     <td>{{ $withdrawal->created_at->format('M d, Y') }}</td>
-                                                    <td><span class="badge-status badge-pending">Pending</span></td>
+                                                    <td>
+                                                        <span class="badge-status badge-pending">Pending</span>
+                                                        @if(!empty($missing))
+                                                            <br><small class="text-danger" title="{{ implode(', ', $missing) }}">Missing: {{ implode(', ', array_slice($missing, 0, 2)) }}{{ count($missing) > 2 ? '...' : '' }}</small>
+                                                        @endif
+                                                    </td>
                                                 </tr>
                                             @empty
                                                 <tr>
@@ -254,6 +260,7 @@
                                         </thead>
                                         <tbody>
                                             @forelse($mobileMoneyWithdrawals as $withdrawal)
+                                                @php $missing = \App\Http\Controllers\Admin\WithdrawalController::missingRequiredFields($withdrawal); @endphp
                                                 <tr>
                                                     <td><input type="checkbox" name="ids[]" value="{{ $withdrawal->id }}" class="mobilemoney-checkbox" /></td>
                                                     <td>
@@ -266,7 +273,12 @@
                                                     <td>{{ $withdrawal->mobileMoneyAccount->account_name ?? 'N/A' }}</td>
                                                     <td><strong>{{ showMoney($withdrawal->amount) }}</strong></td>
                                                     <td>{{ $withdrawal->created_at->format('M d, Y') }}</td>
-                                                    <td><span class="badge-status badge-pending">Pending</span></td>
+                                                    <td>
+                                                        <span class="badge-status badge-pending">Pending</span>
+                                                        @if(!empty($missing))
+                                                            <br><small class="text-danger" title="{{ implode(', ', $missing) }}">Missing: {{ implode(', ', array_slice($missing, 0, 2)) }}{{ count($missing) > 2 ? '...' : '' }}</small>
+                                                        @endif
+                                                    </td>
                                                 </tr>
                                             @empty
                                                 <tr>

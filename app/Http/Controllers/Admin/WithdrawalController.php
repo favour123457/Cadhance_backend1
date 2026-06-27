@@ -126,13 +126,96 @@ class WithdrawalController extends Controller
         return back()->with('success', $message);
     }
 
+    /**
+     * Return a list of required beneficiary fields that are empty for a withdrawal.
+     */
+    public static function missingRequiredFields(Withdrawal $withdrawal): array
+    {
+        $country = $withdrawal->user->country?->name;
+        $missing = [];
+
+        if ($withdrawal->payment_method === 'bank_transfer') {
+            $account = $withdrawal->bankAccount;
+            if (!$account) {
+                return ['Bank account missing'];
+            }
+
+            $required = match (true) {
+                in_array($country, ['United States', 'USA'], true) => [
+                    'account_type' => 'Account type',
+                    'routing_number' => 'Routing number',
+                    'recipient_email' => 'Recipient email',
+                    'recipient_address' => 'Recipient address',
+                    'recipient_country' => 'Recipient country',
+                    'recipient_city' => 'Recipient city',
+                    'postal_code' => 'Postal code',
+                ],
+                $country === 'India' => [
+                    'bank_branch' => 'Bank branch',
+                    'recipient_address' => 'Recipient address',
+                    'recipient_phone' => 'Mobile number',
+                    'recipient_email' => 'Email address',
+                    'sender_id_type' => 'Sender identification type',
+                    'sender_id_number' => 'Sender identification number',
+                    'transfer_purpose_code' => 'Transfer purpose code',
+                ],
+                $country === 'South Africa' => [
+                    'recipient_email' => 'Recipient email',
+                    'recipient_phone' => 'Mobile number',
+                    'recipient_address' => 'Recipient address',
+                ],
+                in_array($country, ['Cameroun', 'Cameroon', "Cote D'Ivoire", "Côte d'Ivoire"], true) => [
+                    'beneficiary_country' => 'Beneficiary country',
+                    'bank_branch' => 'Bank branch',
+                ],
+                in_array($country, ['Ghana', 'Rwanda', 'Tanzania', 'Uganda'], true) => [
+                    'bank_branch' => 'Bank branch',
+                ],
+                default => [],
+            };
+
+            foreach ($required as $field => $label) {
+                if (empty($account->{$field})) {
+                    $missing[] = $label;
+                }
+            }
+        } else {
+            $account = $withdrawal->mobileMoneyAccount;
+            if (!$account) {
+                return ['Mobile money account missing'];
+            }
+
+            if (in_array($country, ["Cote D'Ivoire", "Côte d'Ivoire", 'Senegal'], true)) {
+                foreach ([
+                    'recipient_address' => 'Recipient address',
+                    'recipient_email' => 'Recipient email',
+                    'recipient_country' => 'Recipient country',
+                ] as $field => $label) {
+                    if (empty($account->{$field})) {
+                        $missing[] = $label;
+                    }
+                }
+            }
+        }
+
+        return $missing;
+    }
+
+    private function recipientName($withdrawal): string
+    {
+        $account = $withdrawal->bankAccount ?? $withdrawal->mobileMoneyAccount;
+        if ($account && !empty($account->account_name)) {
+            return $account->account_name;
+        }
+        return trim(($withdrawal->user->first_name ?? '') . ' ' . ($withdrawal->user->last_name ?? ''));
+    }
+
     private function generateBankCSV(string $country, $withdrawals): string
     {
         $handle = fopen('php://temp', 'r+');
 
         switch ($country) {
             case 'Nigeria':
-                // Header: Account number, Bank, Amount, Description
                 fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Description']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
@@ -144,117 +227,126 @@ class WithdrawalController extends Controller
                 }
                 break;
 
-            case 'Ghana':
-                // Header: Account number, Bank, Amount, Debit Currency Amount, Recipient name, Bank branch, Description
-                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Recipient name', 'Bank branch', 'Description']);
+            case 'Cameroun':
+            case 'Cameroon':
+            case 'Cote D\'Ivoire':
+            case 'Côte d\'Ivoire':
+                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Narration', 'Recipient name', 'Beneficiary country', 'Bank branch']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
                         $w->bankAccount->account_number ?? '',
                         $w->bankAccount->bank_name ?? '',
                         $w->amount,
-                        $w->amount, // Same as amount
-                        $w->bankAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
-                        '', // Bank branch (leave empty if not available)
+                        $w->amount,
                         $w->reason ?: 'Withdrawal',
+                        $this->recipientName($w),
+                        $w->bankAccount->beneficiary_country ?? $w->user->country->name ?? '',
+                        $w->bankAccount->bank_branch ?? '',
+                    ]);
+                }
+                break;
+
+            case 'Ghana':
+                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Description', 'Recipient name', 'Bank branch']);
+                foreach ($withdrawals as $w) {
+                    fputcsv($handle, [
+                        $w->bankAccount->account_number ?? '',
+                        $w->bankAccount->bank_name ?? '',
+                        $w->amount,
+                        $w->amount,
+                        $w->reason ?: 'Withdrawal',
+                        $this->recipientName($w),
+                        $w->bankAccount->bank_branch ?? '',
+                    ]);
+                }
+                break;
+
+            case 'India':
+                fputcsv($handle, ['Account number', 'Bank', 'Bank branch', 'Amount', 'Debit Currency Amount', 'Narration', 'Recipient name', 'Recipient address', 'Mobile Number', 'Email address', 'Sender identification type', 'Sender identification number', 'Transfer Purpose code']);
+                foreach ($withdrawals as $w) {
+                    fputcsv($handle, [
+                        $w->bankAccount->account_number ?? '',
+                        $w->bankAccount->bank_name ?? '',
+                        $w->bankAccount->bank_branch ?? '',
+                        $w->amount,
+                        $w->amount,
+                        $w->reason ?: 'Withdrawal',
+                        $this->recipientName($w),
+                        $w->bankAccount->recipient_address ?? '',
+                        $w->bankAccount->recipient_phone ?? $w->user->phone ?? '',
+                        $w->bankAccount->recipient_email ?? $w->user->email ?? '',
+                        $w->bankAccount->sender_id_type ?? '',
+                        $w->bankAccount->sender_id_number ?? '',
+                        $w->bankAccount->transfer_purpose_code ?? '',
                     ]);
                 }
                 break;
 
             case 'Kenya':
-                // Header: Account number, Bank, Amount, Debit Currency Amount, Recipient name, Bank branch, Description
-                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Recipient name', 'Bank branch', 'Description']);
+                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Description', 'Recipient name']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
                         $w->bankAccount->account_number ?? '',
                         $w->bankAccount->bank_name ?? '',
                         $w->amount,
                         $w->amount,
-                        $w->bankAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
-                        '',
                         $w->reason ?: 'Withdrawal',
+                        $this->recipientName($w),
                     ]);
                 }
                 break;
 
             case 'Rwanda':
-                // Header: Account number, Bank, Amount, Debit Currency Amount, Recipient name, Description
-                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Recipient name', 'Description']);
+                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Description', 'Recipient name', 'Bank branch']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
                         $w->bankAccount->account_number ?? '',
                         $w->bankAccount->bank_name ?? '',
                         $w->amount,
                         $w->amount,
-                        $w->bankAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
                         $w->reason ?: 'Withdrawal',
+                        $this->recipientName($w),
+                        $w->bankAccount->bank_branch ?? '',
                     ]);
                 }
                 break;
 
             case 'South Africa':
-                // Header: Account number, Bank code, Amount, Debit Currency Amount, Recipient name, Description
-                fputcsv($handle, ['Account number', 'Bank code', 'Amount', 'Debit Currency Amount', 'Recipient name', 'Description']);
+                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Description', 'Recipient name', 'Recipient email', 'Mobile number', 'Recipient address']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
                         $w->bankAccount->account_number ?? '',
                         $w->bankAccount->bank_name ?? '',
                         $w->amount,
                         $w->amount,
-                        $w->bankAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
                         $w->reason ?: 'Withdrawal',
+                        $this->recipientName($w),
+                        $w->bankAccount->recipient_email ?? $w->user->email ?? '',
+                        $w->bankAccount->recipient_phone ?? $w->user->phone ?? '',
+                        $w->bankAccount->recipient_address ?? '',
                     ]);
                 }
                 break;
 
             case 'Tanzania':
-                // Header: Account number, Bank, Amount, Debit Currency Amount, Recipient name, Description
-                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Recipient name', 'Description']);
-                foreach ($withdrawals as $w) {
-                    fputcsv($handle, [
-                        $w->bankAccount->account_number ?? '',
-                        $w->bankAccount->bank_name ?? '',
-                        $w->amount,
-                        $w->amount,
-                        $w->bankAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
-                        $w->reason ?: 'Withdrawal',
-                    ]);
-                }
-                break;
-
             case 'Uganda':
-                // Header: Account number, Bank, Amount, Debit Currency Amount, Recipient name, Description
-                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Recipient name', 'Description']);
+                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Description', 'Recipient name', 'Bank branch']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
                         $w->bankAccount->account_number ?? '',
                         $w->bankAccount->bank_name ?? '',
                         $w->amount,
                         $w->amount,
-                        $w->bankAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
                         $w->reason ?: 'Withdrawal',
+                        $this->recipientName($w),
+                        $w->bankAccount->bank_branch ?? '',
                     ]);
                 }
                 break;
 
             case 'United States':
             case 'USA':
-                // Header: Account number, Routing number (ACH code), Amount, Description, Recipient name
-                fputcsv($handle, ['Account number', 'Routing number (ACH code)', 'Amount', 'Description', 'Recipient name']);
-                foreach ($withdrawals as $w) {
-                    fputcsv($handle, [
-                        $w->bankAccount->account_number ?? '',
-                        $w->bankAccount->bank_name ?? '', // ACH routing number
-                        $w->amount,
-                        $w->reason ?: 'Withdrawal',
-                        $w->bankAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
-                    ]);
-                }
-                break;
-
-            case 'Cameroun':
-            case 'Cameroon':
-                // Header: Account number, Bank, Amount, Debit Currency Amount, Narration, Recipient name
-                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Narration', 'Recipient name']);
+                fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Narration', 'Recipient name', 'Recipient email address', 'Recipient address', 'Recipient country', 'Recipient city', 'Account type', 'Routing number', 'Swift code', 'Postal code']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
                         $w->bankAccount->account_number ?? '',
@@ -262,13 +354,20 @@ class WithdrawalController extends Controller
                         $w->amount,
                         $w->amount,
                         $w->reason ?: 'Withdrawal',
-                        $w->bankAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
+                        $this->recipientName($w),
+                        $w->bankAccount->recipient_email ?? $w->user->email ?? '',
+                        $w->bankAccount->recipient_address ?? '',
+                        $w->bankAccount->recipient_country ?? $w->user->country->name ?? '',
+                        $w->bankAccount->recipient_city ?? '',
+                        $w->bankAccount->account_type ?? '',
+                        $w->bankAccount->routing_number ?? '',
+                        $w->bankAccount->swift_code ?? '',
+                        $w->bankAccount->postal_code ?? '',
                     ]);
                 }
                 break;
 
             case 'Zambia':
-                // Header: Account number, Bank, Amount, Debit Currency Amount, Recipient name, Description
                 fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Debit Currency Amount', 'Recipient name', 'Description']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
@@ -276,21 +375,20 @@ class WithdrawalController extends Controller
                         $w->bankAccount->bank_name ?? '',
                         $w->amount,
                         $w->amount,
-                        $w->bankAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
+                        $this->recipientName($w),
                         $w->reason ?: 'Withdrawal',
                     ]);
                 }
                 break;
 
             default:
-                // Generic format
                 fputcsv($handle, ['Account number', 'Bank', 'Amount', 'Recipient name', 'Description']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
                         $w->bankAccount->account_number ?? '',
                         $w->bankAccount->bank_name ?? '',
                         $w->amount,
-                        $w->bankAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
+                        $this->recipientName($w),
                         $w->reason ?: 'Withdrawal',
                     ]);
                 }
@@ -309,23 +407,37 @@ class WithdrawalController extends Controller
         $handle = fopen('php://temp', 'r+');
 
         switch ($country) {
+            case 'Cote D\'Ivoire':
+            case 'Côte d\'Ivoire':
+            case 'Senegal':
+                fputcsv($handle, ['Phone Number', 'Network', 'Amount', 'Debit Currency Amount', 'Narration', 'Recipient name', 'Recipient Address', 'Recipient Email Address', 'Recipient Country']);
+                foreach ($withdrawals as $w) {
+                    fputcsv($handle, [
+                        $w->mobileMoneyAccount->account_number ?? '',
+                        $w->mobileMoneyAccount->network_code ?? $w->mobileMoneyAccount->provider ?? '',
+                        $w->amount,
+                        $w->amount,
+                        $w->reason ?: 'Withdrawal',
+                        $this->recipientName($w),
+                        $w->mobileMoneyAccount->recipient_address ?? '',
+                        $w->mobileMoneyAccount->recipient_email ?? $w->user->email ?? '',
+                        $w->mobileMoneyAccount->recipient_country ?? $w->user->country->name ?? '',
+                    ]);
+                }
+                break;
+
             case 'Cameroun':
             case 'Cameroon':
-            case 'Kenya':
+            case 'Chad':
+            case 'Gabon':
             case 'Ghana':
+            case 'Kenya':
             case 'Rwanda':
             case 'Tanzania':
             case 'Uganda':
             case 'Zambia':
-            case 'Cote D\'Ivoire':
-            case 'Côte d\'Ivoire':
-            case 'Ivory Coast':
-            case 'Chad':
-            case 'Gabon':
-            case 'Senegal':
             case 'Republic of Congo':
             case 'Congo':
-                // Header: Phone Number, Network, Amount, Debit Currency Amount, Narration, Recipient name
                 fputcsv($handle, ['Phone Number', 'Network', 'Amount', 'Debit Currency Amount', 'Narration', 'Recipient name']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
@@ -334,20 +446,19 @@ class WithdrawalController extends Controller
                         $w->amount,
                         $w->amount,
                         $w->reason ?: 'Withdrawal',
-                        $w->mobileMoneyAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
+                        $this->recipientName($w),
                     ]);
                 }
                 break;
 
             default:
-                // Generic format
                 fputcsv($handle, ['Phone Number', 'Network', 'Amount', 'Recipient name', 'Narration']);
                 foreach ($withdrawals as $w) {
                     fputcsv($handle, [
                         $w->mobileMoneyAccount->account_number ?? '',
                         $w->mobileMoneyAccount->network_code ?? $w->mobileMoneyAccount->provider ?? '',
                         $w->amount,
-                        $w->mobileMoneyAccount->account_name ?? ($w->user->first_name . ' ' . $w->user->last_name),
+                        $this->recipientName($w),
                         $w->reason ?: 'Withdrawal',
                     ]);
                 }

@@ -98,13 +98,16 @@ class WithdrawalsController extends Controller
                 // Attempt automatic Flutterwave transfer for mobile money
                 $reference = 'WD_MM_' . $user->id . '_' . time() . '_' . rand(1000, 9999);
 
+                $transferMeta = $this->buildMobileMoneyTransferMeta($mobile_money, $user);
+
                 $transferResp = $this->flutterwave->initiateMobileMoneyTransfer(
                     $mobile_money->account_number, // phone number
                     $networkCode, // network code
                     (float) $convertedAmount,
                     $targetCurrency,
                     $reason,
-                    $reference
+                    $reference,
+                    $transferMeta
                 );
 
                 // Determine status from Flutterwave response
@@ -197,6 +200,8 @@ class WithdrawalsController extends Controller
                 // Attempt automatic Flutterwave transfer for bank transfer
                 $reference = 'WD_BT_' . $user->id . '_' . time() . '_' . rand(1000, 9999);
 
+                $transferMeta = $this->buildBankTransferMeta($bank_account, $user);
+
                 $transferResp = $this->flutterwave->initiateTransfer(
                     $bank_account->account_number,
                     $bank_code,
@@ -205,7 +210,8 @@ class WithdrawalsController extends Controller
                     $targetCurrency,
                     $reason,
                     $reference,
-                    $bank_account->destination_branch_code // For Ghana, Kenya
+                    $bank_account->destination_branch_code, // For Ghana, Kenya
+                    $transferMeta
                 );
 
                 // Determine status from Flutterwave response
@@ -401,5 +407,119 @@ class WithdrawalsController extends Controller
             'status'       => 'success',
             'account_name' => $data['data']['account_name'],
         ]);
+    }
+
+    /**
+     * Build Flutterwave transfer meta payload for bank withdrawals.
+     * Different countries/regulators require different beneficiary details.
+     */
+    private function buildBankTransferMeta(BankAccount $bankAccount, $user): array
+    {
+        $country = $user->country?->name;
+        $meta = [];
+
+        // Common fields
+        if ($bankAccount->recipient_email) {
+            $meta['recipient_email'] = $bankAccount->recipient_email;
+        }
+        if ($bankAccount->recipient_address) {
+            $meta['recipient_address'] = $bankAccount->recipient_address;
+        }
+        if ($bankAccount->recipient_phone) {
+            $meta['recipient_phone'] = $bankAccount->recipient_phone;
+        }
+        if ($bankAccount->bank_branch) {
+            $meta['bank_branch'] = $bankAccount->bank_branch;
+        }
+
+        switch ($country) {
+            case 'United States':
+            case 'USA':
+                if ($bankAccount->account_type) {
+                    $meta['account_type'] = $bankAccount->account_type;
+                }
+                if ($bankAccount->routing_number) {
+                    $meta['routing_number'] = $bankAccount->routing_number;
+                }
+                if ($bankAccount->swift_code) {
+                    $meta['swift_code'] = $bankAccount->swift_code;
+                }
+                if ($bankAccount->postal_code) {
+                    $meta['postal_code'] = $bankAccount->postal_code;
+                }
+                if ($bankAccount->recipient_city) {
+                    $meta['recipient_city'] = $bankAccount->recipient_city;
+                }
+                if ($bankAccount->recipient_country) {
+                    $meta['recipient_country'] = $bankAccount->recipient_country;
+                }
+                break;
+
+            case 'India':
+                if ($bankAccount->recipient_address) {
+                    $meta['recipient_address'] = $bankAccount->recipient_address;
+                }
+                if ($bankAccount->recipient_phone) {
+                    $meta['mobile_number'] = $bankAccount->recipient_phone;
+                }
+                if ($bankAccount->sender_id_type) {
+                    $meta['sender_id_type'] = $bankAccount->sender_id_type;
+                }
+                if ($bankAccount->sender_id_number) {
+                    $meta['sender_id_number'] = $bankAccount->sender_id_number;
+                }
+                if ($bankAccount->transfer_purpose_code) {
+                    $meta['transfer_purpose_code'] = $bankAccount->transfer_purpose_code;
+                }
+                break;
+
+            case 'South Africa':
+                if ($bankAccount->recipient_email) {
+                    $meta['recipient_email'] = $bankAccount->recipient_email;
+                }
+                if ($bankAccount->recipient_phone) {
+                    $meta['mobile_number'] = $bankAccount->recipient_phone;
+                }
+                if ($bankAccount->recipient_address) {
+                    $meta['recipient_address'] = $bankAccount->recipient_address;
+                }
+                break;
+
+            case 'Cameroun':
+            case 'Cameroon':
+            case 'Cote D\'Ivoire':
+            case 'Côte d\'Ivoire':
+                if ($bankAccount->beneficiary_country) {
+                    $meta['beneficiary_country'] = $bankAccount->beneficiary_country;
+                }
+                break;
+        }
+
+        return $meta;
+    }
+
+    /**
+     * Build Flutterwave transfer meta payload for mobile money withdrawals.
+     */
+    private function buildMobileMoneyTransferMeta(MobileMoneyAccount $mobileMoney, $user): array
+    {
+        $country = $user->country?->name;
+        $meta = [];
+
+        $requiresAddress = in_array($country, ["Cote D'Ivoire", "Côte d'Ivoire", 'Senegal'], true);
+
+        if ($requiresAddress) {
+            if ($mobileMoney->recipient_address) {
+                $meta['recipient_address'] = $mobileMoney->recipient_address;
+            }
+            if ($mobileMoney->recipient_email) {
+                $meta['recipient_email'] = $mobileMoney->recipient_email;
+            }
+            if ($mobileMoney->recipient_country) {
+                $meta['recipient_country'] = $mobileMoney->recipient_country;
+            }
+        }
+
+        return $meta;
     }
 }
