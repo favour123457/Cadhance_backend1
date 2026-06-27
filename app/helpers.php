@@ -392,3 +392,80 @@ if (!function_exists('fulfillWalletTopup')) {
         return false;
     }
 }
+
+if (!function_exists('verifyFlutterwavePayment')) {
+    /**
+     * Verify a Flutterwave transaction server-side.
+     *
+     * Performs the standard checks (API status, transaction status, tx_ref match)
+     * plus amount/currency verification and an optional transaction_id guard.
+     * Logs the raw Flutterwave response so unexpected behaviour can be audited.
+     *
+     * @param int $transaction_id Flutterwave transaction ID from the callback/webhook.
+     * @param string $tx_ref The transaction reference we generated.
+     * @param float $expected_amount The amount we expect to have been charged.
+     * @param string $expected_currency The currency we expect (e.g. USD, NGN).
+     * @param string|null $expected_transaction_id If the initiate response stored a Flutterwave transaction ID, it must match.
+     * @return array ['valid' => bool, 'data' => array|null, 'error' => string]
+     */
+    function verifyFlutterwavePayment(
+        int $transaction_id,
+        string $tx_ref,
+        float $expected_amount,
+        string $expected_currency,
+        ?string $expected_transaction_id = null
+    ): array {
+        $flutterwave = new \App\Services\FlutterwaveService();
+        $verification = $flutterwave->verifyTransaction($transaction_id);
+        $data = $verification['data'] ?? null;
+
+        Log::info('Flutterwave transaction verification', [
+            'transaction_id' => $transaction_id,
+            'tx_ref' => $tx_ref,
+            'expected_amount' => $expected_amount,
+            'expected_currency' => $expected_currency,
+            'expected_transaction_id' => $expected_transaction_id,
+            'response_status' => $verification['status'] ?? null,
+            'data_status' => $data['status'] ?? null,
+            'data_tx_ref' => $data['tx_ref'] ?? null,
+            'data_amount' => $data['amount'] ?? null,
+            'data_charged_amount' => $data['charged_amount'] ?? null,
+            'data_currency' => $data['currency'] ?? null,
+        ]);
+
+        if (($verification['status'] ?? '') !== 'success') {
+            return ['valid' => false, 'data' => $data, 'error' => 'Flutterwave verification API call failed.'];
+        }
+
+        if (!$data) {
+            return ['valid' => false, 'data' => null, 'error' => 'No transaction data returned by Flutterwave.'];
+        }
+
+        if (strtolower($data['status'] ?? '') !== 'successful') {
+            return ['valid' => false, 'data' => $data, 'error' => 'Flutterwave transaction status is not successful.'];
+        }
+
+        if (($data['tx_ref'] ?? '') !== $tx_ref) {
+            return ['valid' => false, 'data' => $data, 'error' => 'Transaction reference mismatch.'];
+        }
+
+        // If we stored a transaction ID from the initiate response, it must match the one in the callback.
+        if ($expected_transaction_id !== null && (string) $transaction_id !== (string) $expected_transaction_id) {
+            return ['valid' => false, 'data' => $data, 'error' => 'Transaction ID mismatch.'];
+        }
+
+        $chargedAmount = (float) ($data['charged_amount'] ?? $data['amount'] ?? 0);
+        $currency = strtoupper($data['currency'] ?? '');
+
+        if ($currency !== strtoupper($expected_currency)) {
+            return ['valid' => false, 'data' => $data, 'error' => 'Transaction currency mismatch.'];
+        }
+
+        // Allow tiny rounding differences (up to 1 unit of the smallest currency unit).
+        if (abs($chargedAmount - $expected_amount) > 0.01) {
+            return ['valid' => false, 'data' => $data, 'error' => 'Transaction amount mismatch.'];
+        }
+
+        return ['valid' => true, 'data' => $data, 'error' => ''];
+    }
+}

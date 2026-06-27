@@ -85,8 +85,8 @@ class PaymentFulfillmentService
                 WalletHistory::create([
                     'wallet_id'                => $seller->wallet->id,
                     'amount'                   => $template->price,
-                    'wallet_history_type_id'   => 1,
-                    'wallet_history_status_id' => 2,
+                    'wallet_history_type_id'   => WalletHistoryType::CREDIT,
+                    'wallet_history_status_id' => WalletHistoryStatus::SUCCESS,
                     'tx_ref'                   => $purchase->tx_ref,
                 ]);
             }
@@ -123,8 +123,8 @@ class PaymentFulfillmentService
                 WalletHistory::create([
                     'wallet_id'                => $owner->wallet->id,
                     'amount'                   => $group->price,
-                    'wallet_history_type_id'   => 1,
-                    'wallet_history_status_id' => 2,
+                    'wallet_history_type_id'   => WalletHistoryType::CREDIT,
+                    'wallet_history_status_id' => WalletHistoryStatus::SUCCESS,
                     'tx_ref'                   => $subscription->tx_ref,
                 ]);
             }

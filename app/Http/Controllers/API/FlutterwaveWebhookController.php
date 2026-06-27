@@ -138,10 +138,14 @@ class FlutterwaveWebhookController extends Controller
     {
         $tx_ref = $data['tx_ref'] ?? null;
         $status = $data['status'] ?? '';
-        $transaction_id = $data['id'] ?? null;
+        $transaction_id = (int) ($data['id'] ?? 0);
 
         if (!$tx_ref) {
             return response()->json(['status' => 'failed', 'message' => 'Missing tx_ref'], 400);
+        }
+
+        if (!$transaction_id) {
+            return response()->json(['status' => 'failed', 'message' => 'Missing transaction_id'], 400);
         }
 
         // Wallet top-ups
@@ -154,15 +158,28 @@ class FlutterwaveWebhookController extends Controller
             return response()->json(['status' => 'success', 'message' => 'Charge status ignored']);
         }
 
-        // Optional server-side verification for extra safety
-        $flutterwave = new FlutterwaveService();
-        $verification = $flutterwave->verifyTransaction($transaction_id);
-        $verifiedStatus = $verification['data']['status'] ?? '';
+        // Look up the pending record to enforce amount/currency/transaction_id checks.
+        $expected = $this->getExpectedPaymentDetails($tx_ref);
 
-        if (strtolower($verifiedStatus) !== 'successful') {
+        if (!$expected) {
+            Log::warning('Purchase/subscription not found for Flutterwave charge webhook', ['tx_ref' => $tx_ref]);
+            return response()->json(['status' => 'failed', 'message' => 'Transaction not found'], 404);
+        }
+
+        // Server-side verification with amount/currency/transaction_id checks.
+        $verification = verifyFlutterwavePayment(
+            transaction_id: $transaction_id,
+            tx_ref: $tx_ref,
+            expected_amount: $expected['amount'],
+            expected_currency: $expected['currency'],
+            expected_transaction_id: $expected['transaction_id'],
+        );
+
+        if (!$verification['valid']) {
             Log::warning('Charge webhook verification failed', [
                 'tx_ref' => $tx_ref,
                 'transaction_id' => $transaction_id,
+                'error' => $verification['error'],
             ]);
             return response()->json(['status' => 'failed', 'message' => 'Verification failed'], 400);
         }
@@ -180,6 +197,12 @@ class FlutterwaveWebhookController extends Controller
      */
     protected function handleTopupWebhook(string $tx_ref, string $status, $transaction_id)
     {
+        $transaction_id = (int) $transaction_id;
+
+        if (!$transaction_id) {
+            return response()->json(['status' => 'failed', 'message' => 'Missing transaction_id'], 400);
+        }
+
         $history = WalletHistory::where('tx_ref', $tx_ref)->first();
 
         if (!$history) {
@@ -192,15 +215,20 @@ class FlutterwaveWebhookController extends Controller
             return response()->json(['status' => 'success', 'message' => 'Charge status recorded']);
         }
 
-        // Optional server-side verification for extra safety
-        $flutterwave = new FlutterwaveService();
-        $verification = $flutterwave->verifyTransaction($transaction_id);
-        $verifiedStatus = $verification['data']['status'] ?? '';
+        // Server-side verification with amount/currency/transaction_id checks.
+        $verification = verifyFlutterwavePayment(
+            transaction_id: $transaction_id,
+            tx_ref: $tx_ref,
+            expected_amount: (float) $history->amount,
+            expected_currency: $history->currency,
+            expected_transaction_id: $history->transaction_id,
+        );
 
-        if (strtolower($verifiedStatus) !== 'successful') {
-            Log::warning('Charge webhook verification failed', [
+        if (!$verification['valid']) {
+            Log::warning('Topup webhook verification failed', [
                 'tx_ref' => $tx_ref,
                 'transaction_id' => $transaction_id,
+                'error' => $verification['error'],
             ]);
             $history->update(['wallet_history_status_id' => WalletHistoryStatus::FAILED]);
             return response()->json(['status' => 'failed', 'message' => 'Verification failed'], 400);
@@ -209,6 +237,47 @@ class FlutterwaveWebhookController extends Controller
         fulfillWalletTopup($history);
 
         return response()->json(['status' => 'success', 'message' => 'Wallet credited']);
+    }
+
+    /**
+     * Get expected payment details for a tx_ref so webhooks can verify
+     * amount, currency, and transaction_id before fulfilling.
+     */
+    protected function getExpectedPaymentDetails(string $tx_ref): ?array
+    {
+        $prefix = explode('_', $tx_ref)[0] ?? '';
+
+        switch ($prefix) {
+            case 'asset':
+                $purchase = \App\Models\UserPurchase::where('tx_ref', $tx_ref)
+                    ->where('purchasable_type', 'asset')
+                    ->first();
+                return $purchase ? [
+                    'amount' => (float) $purchase->amount_paid,
+                    'currency' => $purchase->currency,
+                    'transaction_id' => $purchase->transaction_id,
+                ] : null;
+
+            case 'template':
+                $purchase = \App\Models\UserPurchase::where('tx_ref', $tx_ref)
+                    ->where('purchasable_type', 'template')
+                    ->first();
+                return $purchase ? [
+                    'amount' => (float) $purchase->amount_paid,
+                    'currency' => $purchase->currency,
+                    'transaction_id' => $purchase->transaction_id,
+                ] : null;
+
+            case 'group':
+                $subscription = \App\Models\GroupSubscription::where('tx_ref', $tx_ref)->first();
+                return $subscription ? [
+                    'amount' => (float) $subscription->amount_paid,
+                    'currency' => $subscription->currency,
+                    'transaction_id' => $subscription->transaction_id,
+                ] : null;
+        }
+
+        return null;
     }
 
     /**

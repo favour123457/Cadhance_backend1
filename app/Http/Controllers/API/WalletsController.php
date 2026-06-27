@@ -42,7 +42,7 @@ class WalletsController extends Controller
         $tx_ref   = 'topup_' . $user->id . '_' . Str::random(12);
 
         // Create a pending wallet history record
-        WalletHistory::create([
+        $history = WalletHistory::create([
             'wallet_id'               => $user->wallet->id,
             'amount'                  => $amount,
             'wallet_history_type_id'  => WalletHistoryType::CREDIT,
@@ -75,6 +75,10 @@ class WalletsController extends Controller
                 'message' => $response['message'] ?? 'Could not generate payment link.',
             ], 502);
         }
+
+        // Store the Flutterwave transaction ID so callbacks/webhooks can ensure
+        // they are fulfilling the exact transaction we created.
+        $history->update(['transaction_id' => $response['data']['id'] ?? null]);
 
         return response()->json([
             'status'       => 'success',
@@ -112,21 +116,20 @@ class WalletsController extends Controller
             return response()->json(['status' => 'success', 'message' => 'Already processed.']);
         }
 
-        // Verify with Flutterwave
-        $flutterwave = new FlutterwaveService();
-        $verification = $flutterwave->verifyTransaction($transaction_id);
+        // Verify with Flutterwave, including amount/currency and transaction_id checks.
+        $verification = verifyFlutterwavePayment(
+            transaction_id: $transaction_id,
+            tx_ref: $tx_ref,
+            expected_amount: (float) $history->amount,
+            expected_currency: $history->currency,
+            expected_transaction_id: $history->transaction_id,
+        );
 
-        $data = $verification['data'] ?? null;
-
-        if (
-            ($verification['status'] ?? '') !== 'success' ||
-            ($data['status'] ?? '') !== 'successful' ||
-            ($data['tx_ref'] ?? '') !== $tx_ref
-        ) {
+        if (!$verification['valid']) {
             $history->update(['wallet_history_status_id' => WalletHistoryStatus::FAILED]);
             return response()->json([
                 'status'  => 'failed',
-                'message' => 'Payment verification failed.',
+                'message' => 'Payment verification failed: ' . $verification['error'],
             ], 400);
         }
 

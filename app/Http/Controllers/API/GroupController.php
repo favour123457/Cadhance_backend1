@@ -122,7 +122,7 @@ class GroupController extends Controller
             ], 400);
         }
 
-        if (GroupSubscription::where('group_id', $group->id)->count() > 0) {
+        if (GroupSubscription::where('group_id', $group->id)->where('status', 'completed')->count() > 0) {
             return response()->json([
                 'status' => 'failed',
                 'message' => 'Cannot delete a group with active subscribers.',
@@ -158,9 +158,13 @@ class GroupController extends Controller
             return response()->json(['status' => 'failed', 'message' => 'Invalid group!'], 400);
         }
 
-        $exists = GroupSubscription::where('user_id', $user->id)->where('group_id', $group->id)->first();
-        if ($exists) {
-            return response()->json(['status' => 'failed', 'message' => 'Already subscribed to this group!'], 400);
+        $existing = GroupSubscription::where('user_id', $user->id)->where('group_id', $group->id)->first();
+        if ($existing) {
+            if ($existing->status === 'completed') {
+                return response()->json(['status' => 'failed', 'message' => 'Already subscribed to this group!'], 400);
+            }
+            // Remove stale pending/failed subscription so the user can retry payment.
+            $existing->delete();
         }
 
         $priceUSD = $group->price;
@@ -203,6 +207,9 @@ class GroupController extends Controller
             ], 502);
         }
 
+        // Store the Flutterwave transaction ID so callbacks can verify the exact transaction.
+        $subscription->update(['transaction_id' => $response['data']['id'] ?? null]);
+
         return response()->json([
             'status'       => 'success',
             'payment_link' => $response['data']['link'],
@@ -228,17 +235,18 @@ class GroupController extends Controller
             return response()->json(['status' => 'success', 'message' => 'Already processed.']);
         }
 
-        $flutterwave = new \App\Services\FlutterwaveService();
-        $verification = $flutterwave->verifyTransaction($transaction_id);
-        $data = $verification['data'] ?? null;
+        // Verify with Flutterwave, including amount/currency and transaction_id checks.
+        $verification = verifyFlutterwavePayment(
+            transaction_id: $transaction_id,
+            tx_ref: $tx_ref,
+            expected_amount: (float) $subscription->amount_paid,
+            expected_currency: $subscription->currency,
+            expected_transaction_id: $subscription->transaction_id,
+        );
 
-        if (
-            ($verification['status'] ?? '') !== 'success' ||
-            ($data['status'] ?? '') !== 'successful' ||
-            ($data['tx_ref'] ?? '') !== $tx_ref
-        ) {
+        if (!$verification['valid']) {
             $subscription->update(['status' => 'failed']);
-            return response()->json(['status' => 'failed', 'message' => 'Payment verification failed.'], 400);
+            return response()->json(['status' => 'failed', 'message' => 'Payment verification failed: ' . $verification['error']], 400);
         }
 
         // Atomically fulfill the subscription (prevents double fulfillment)

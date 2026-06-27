@@ -278,11 +278,17 @@ class TemplateController extends Controller
             return response()->json(['status' => 'failed', 'message' => 'You cannot purchase your own template!'], 400);
         }
 
-        if (UserPurchase::where('user_id', $user->id)
+        $existingPurchase = UserPurchase::where('user_id', $user->id)
             ->where('purchasable_type', 'template')
             ->where('purchasable_id', $template->id)
-            ->exists()) {
-            return response()->json(['status' => 'failed', 'message' => 'You have already purchased this template!'], 400);
+            ->first();
+
+        if ($existingPurchase) {
+            if ($existingPurchase->status === 'completed') {
+                return response()->json(['status' => 'failed', 'message' => 'You have already purchased this template!'], 400);
+            }
+            // Remove stale pending/failed record so the user can retry payment.
+            $existingPurchase->delete();
         }
 
         $totalPriceUSD = $template->price;
@@ -324,6 +330,9 @@ class TemplateController extends Controller
             ], 502);
         }
 
+        // Store the Flutterwave transaction ID so callbacks can verify the exact transaction.
+        $purchase->update(['transaction_id' => $response['data']['id'] ?? null]);
+
         return response()->json([
             'status'       => 'success',
             'payment_link' => $response['data']['link'],
@@ -352,17 +361,18 @@ class TemplateController extends Controller
             return response()->json(['status' => 'success', 'message' => 'Already processed.']);
         }
 
-        $flutterwave = new \App\Services\FlutterwaveService();
-        $verification = $flutterwave->verifyTransaction($transaction_id);
-        $data = $verification['data'] ?? null;
+        // Verify with Flutterwave, including amount/currency and transaction_id checks.
+        $verification = verifyFlutterwavePayment(
+            transaction_id: $transaction_id,
+            tx_ref: $tx_ref,
+            expected_amount: (float) $purchase->amount_paid,
+            expected_currency: $purchase->currency,
+            expected_transaction_id: $purchase->transaction_id,
+        );
 
-        if (
-            ($verification['status'] ?? '') !== 'success' ||
-            ($data['status'] ?? '') !== 'successful' ||
-            ($data['tx_ref'] ?? '') !== $tx_ref
-        ) {
+        if (!$verification['valid']) {
             $purchase->update(['status' => 'failed']);
-            return response()->json(['status' => 'failed', 'message' => 'Payment verification failed.'], 400);
+            return response()->json(['status' => 'failed', 'message' => 'Payment verification failed: ' . $verification['error']], 400);
         }
 
         // Atomically fulfill the purchase (prevents double fulfillment)
@@ -395,6 +405,7 @@ class TemplateController extends Controller
                 || UserPurchase::where('user_id', $user->id)
                        ->where('purchasable_type', 'template')
                        ->where('purchasable_id', $template->id)
+                       ->where('status', 'completed')
                        ->exists();
 
             if (!$isOwner && !$hasPurchased) {
