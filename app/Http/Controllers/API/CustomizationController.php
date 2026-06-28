@@ -294,7 +294,7 @@ class CustomizationController extends Controller
             ], 403);
         }
 
-        $status = \App\Models\CustomizationStatus::where('name', $statusName)->first();
+        $status = \App\Models\CustomizationStatus::whereRaw('LOWER(name) = ?', [strtolower($statusName)])->first();
 
         if (!$status) {
             return response()->json([
