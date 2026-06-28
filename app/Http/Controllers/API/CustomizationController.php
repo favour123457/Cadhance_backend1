@@ -233,15 +233,22 @@ class CustomizationController extends Controller
         ]);
         $chat->update(['last_message_at' => now()]);
 
+        $otherUserId = $user->id == $customization->user_id ? $customization->designer_id : $customization->user_id;
+        $actionLabel = $resolvedStatusName === 'Accepted' ? 'accepted' : ($resolvedStatusName === 'Cancelled' ? 'rejected' : 'updated');
+
         Notification::create([
-            'user_id' => $user->id == $customization->user_id ? $customization->designer_id : $customization->user_id,
-            'title' => 'Customization Request Update',
-            'message' => 'Your customization request status has been updated!',
+            'user_id' => $otherUserId,
+            'title' => 'Customization Request ' . ucfirst($actionLabel),
+            'message' => 'Your customization request has been ' . $actionLabel . '.',
+            'data' => json_encode([
+                'customization_id' => $customization->id,
+                'status' => $resolvedStatusName,
+            ]),
         ]);
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Customization request status updated successfully!',
+            'message' => 'Customization request ' . $actionLabel . ' successfully!',
             'customization' => new CustomizationRequestResource($customization->fresh(['asset.user', 'template.user', 'user', 'designer', 'customization_status', 'milestones', 'price_adjustments', 'accepted_price_adjustment', 'chat.messages.sender_user', 'revisions'])),
         ]);
     }
@@ -249,9 +256,20 @@ class CustomizationController extends Controller
     /**
      * Accept a customization request by resolving the 'Accepted' status name to its ID.
      * This avoids hardcoding status IDs in the frontend.
+     * Only the designer (recipient) can accept a request.
      */
     public function accept(Request $request)
     {
+        $user = $this->authenticatedUser();
+        $customization = CustomizationRequest::find($request->customization_id);
+
+        if (!$customization || (int) $customization->designer_id !== (int) $user->id) {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'Only the designer can accept this customization request.'
+            ], 403);
+        }
+
         return $this->setStatusByName($request, 'Accepted');
     }
 
@@ -315,10 +333,16 @@ class CustomizationController extends Controller
         ]);
         $chat->update(['last_message_at' => now()]);
 
+        $otherUserId = $user->id == $customization->user_id ? $customization->designer_id : $customization->user_id;
+
         Notification::create([
-            'user_id' => $user->id == $customization->user_id ? $customization->designer_id : $customization->user_id,
+            'user_id' => $otherUserId,
             'title' => 'Customization Request Update',
-            'message' => 'Your customization request status has been updated!',
+            'message' => 'Your customization request status has been changed to ' . strtolower($resolvedStatusName) . '.',
+            'data' => json_encode([
+                'customization_id' => $customization->id,
+                'status' => $resolvedStatusName,
+            ]),
         ]);
 
         return response()->json([
