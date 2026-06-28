@@ -281,6 +281,52 @@ class TemplateController extends Controller
     }
 
     /**
+     * Toggle favorite (like) for a template.
+     * POST /templates/toggle-favorite?template_id=123
+     */
+    public function toggleFavorite(Request $request)
+    {
+        $request->validate(['template_id' => 'required|integer']);
+
+        $token = JWTAuth::parseToken();
+        $user = $token->authenticate();
+
+        $template = Template::find($request->template_id);
+        if (!$template) {
+            return response()->json(['status' => 'failed', 'message' => 'Template not found!'], 404);
+        }
+
+        $existing = \App\Models\Favorite::where('user_id', $user->id)
+            ->where('favoriteable_type', 'template')
+            ->where('favoriteable_id', $template->id)
+            ->first();
+
+        if ($existing) {
+            $existing->delete();
+            $template->decrement('favorite_count');
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Removed from favorites',
+                'favorited' => false,
+                'favorite_count' => $template->favorite_count,
+            ]);
+        } else {
+            \App\Models\Favorite::create([
+                'user_id' => $user->id,
+                'favoriteable_type' => 'template',
+                'favoriteable_id' => $template->id,
+            ]);
+            $template->increment('favorite_count');
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Added to favorites',
+                'favorited' => true,
+                'favorite_count' => $template->favorite_count,
+            ]);
+        }
+    }
+
+    /**
      * Initiate template purchase via Flutterwave.
      * POST /templates/purchase?template_id=123&amount=100&currency=NGN
      */

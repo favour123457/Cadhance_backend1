@@ -10,6 +10,23 @@ class TemplateResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $authUserId = null;
+        $isFavorited = false;
+
+        try {
+            $token = \Tymon\JWTAuth\Facades\JWTAuth::parseToken();
+            $authUser = $token->authenticate();
+            if ($authUser) {
+                $authUserId = $authUser->id;
+                $isFavorited = \App\Models\Favorite::where('user_id', $authUserId)
+                    ->where('favoriteable_type', 'template')
+                    ->where('favoriteable_id', $this->id)
+                    ->exists();
+            }
+        } catch (\Exception $e) {
+            // Not authenticated - that's OK
+        }
+
         return [
             'id'              => $this->id,
             'user'            => new UsersResource($this->user),
@@ -17,6 +34,7 @@ class TemplateResource extends JsonResource
             'description'     => $this->description,
             'includes'        => $this->includes,
             'price'           => $this->price,
+            'favorite_count'  => $this->favorite_count ?? 0,
             'download_count'  => $this->download_count,
             'thumbnail'       => $this->thumbnail ? Storage::disk('r2')->url($this->thumbnail) : null,
             'images'          => $this->images
@@ -37,6 +55,7 @@ class TemplateResource extends JsonResource
             'files'           => $this->template_files->map(
                 fn($file) => new TemplateFileResource($file->setRelation('template', $this->resource))
             ),
+            'is_favorited'    => $isFavorited,
             'created_at'      => $this->created_at,
         ];
     }

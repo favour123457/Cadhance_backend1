@@ -164,6 +164,7 @@ Route::middleware('jwt.auth')->group(function () {
         Route::post('/destroy', [TemplateController::class, 'destroy']);
         Route::post('/file/add', [TemplateController::class, 'addFile']);
         Route::post('/file/remove', [TemplateController::class, 'removeFile']);
+        Route::post('/toggle-favorite', [TemplateController::class, 'toggleFavorite']);
         Route::post('/purchase', [TemplateController::class, 'purchaseTemplate'])->middleware('throttle:10,1');
         Route::get('/file/{file_id}/download', [TemplateController::class, 'downloadTemplateFile']);
     });

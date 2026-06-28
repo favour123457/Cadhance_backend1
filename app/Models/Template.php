@@ -15,6 +15,7 @@ class Template extends Model
         'has_sample'      => 'boolean',
         'conversion_rate' => 'float',
         'rank_score'      => 'float',
+        'favorite_count'  => 'integer',
     ];
 
     public function user()
