@@ -161,7 +161,7 @@ class DashboardController extends Controller
         $totalEarned = WalletHistory::where('wallet_id', $wallet->id)
             ->where('wallet_history_type_id', 1)
             ->where('wallet_history_status_id', 2)
-            ->sum('amount');
+            ->sum(DB::raw('COALESCE(amount_usd, amount)'));
 
         $totalWithdrawn = WalletHistory::where('wallet_id', $wallet->id)
             ->where('wallet_history_type_id', 2)
@@ -174,7 +174,7 @@ class DashboardController extends Controller
             ->where('wallet_history_type_id', 1)
             ->where('wallet_history_status_id', 2)
             ->where('created_at', '>=', now()->subDays(30))
-            ->selectRaw('DATE(created_at) as date, SUM(amount) as amount')
+            ->selectRaw('DATE(created_at) as date, SUM(COALESCE(amount_usd, amount)) as amount')
             ->groupBy('date')
             ->orderBy('date')
             ->get();

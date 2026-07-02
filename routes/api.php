@@ -224,6 +224,7 @@ Route::middleware('jwt.auth')->group(function () {
     //route for wallet
     Route::prefix('wallet')->group(function () {
         Route::get('/histories', [WalletsController::class, 'histories']);
+        Route::get('/summary', [WalletsController::class, 'summary']);
         Route::post('/topup/initiate', [WalletsController::class, 'initiateTopup'])->middleware('throttle:10,1');
     });
 

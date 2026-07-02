@@ -4,11 +4,13 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\WalletHistoriesResource;
+use App\Models\Escrow;
 use App\Models\WalletHistory;
 use App\Models\WalletHistoryStatus;
 use App\Models\WalletHistoryType;
 use App\Services\FlutterwaveService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
@@ -21,6 +23,41 @@ class WalletsController extends Controller
         $wallet_histories = $user->wallet->wallet_histories;
 
         return response()->json(WalletHistoriesResource::collection($wallet_histories));
+    }
+
+    /**
+     * GET /wallet/summary
+     * Returns the user's wallet balance, total earned, total withdrawn, and escrow.
+     * Totals are calculated in USD using amount_usd when available.
+     */
+    public function summary()
+    {
+        $token = JWTAuth::parseToken();
+        $user = $token->authenticate();
+
+        $wallet = $user->wallet;
+
+        $totalEarned = WalletHistory::where('wallet_id', $wallet->id)
+            ->where('wallet_history_type_id', WalletHistoryType::CREDIT)
+            ->where('wallet_history_status_id', WalletHistoryStatus::SUCCESS)
+            ->sum(DB::raw('COALESCE(amount_usd, amount)'));
+
+        $totalWithdrawn = WalletHistory::where('wallet_id', $wallet->id)
+            ->where('wallet_history_type_id', WalletHistoryType::DEBIT)
+            ->where('wallet_history_status_id', WalletHistoryStatus::SUCCESS)
+            ->sum(DB::raw('COALESCE(amount_usd, amount)'));
+
+        $inEscrow = Escrow::where('user_id', $user->id)->sum('amount');
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'current_balance' => (float) $wallet->balance,
+                'total_earned'    => (float) $totalEarned,
+                'total_withdrawn' => (float) $totalWithdrawn,
+                'in_escrow'       => (float) $inEscrow,
+            ],
+        ]);
     }
 
     /**
