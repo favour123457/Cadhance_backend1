@@ -41,10 +41,17 @@ class WalletsController extends Controller
         $amount   = (float) $request->input('amount');
         $tx_ref   = 'topup_' . $user->id . '_' . Str::random(12);
 
+        // The wallet balance is kept in USD. Store the USD equivalent so the wallet
+        // is credited correctly regardless of which currency Flutterwave charged.
+        $amountUsd = $currency === 'USD'
+            ? $amount
+            : convertCurrency($amount, $currency, 'USD');
+
         // Create a pending wallet history record
         $history = WalletHistory::create([
             'wallet_id'               => $user->wallet->id,
             'amount'                  => $amount,
+            'amount_usd'              => $amountUsd,
             'wallet_history_type_id'  => WalletHistoryType::CREDIT,
             'wallet_history_status_id'=> WalletHistoryStatus::PENDING,
             'tx_ref'                  => $tx_ref,

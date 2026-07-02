@@ -210,7 +210,7 @@ class FlutterwaveWebhookController extends Controller
             return response()->json(['status' => 'failed', 'message' => 'Transaction not found'], 404);
         }
 
-        if (strtolower($status) !== 'successful') {
+        if (!in_array(strtolower($status), ['successful', 'completed'], true)) {
             $history->update(['wallet_history_status_id' => WalletHistoryStatus::FAILED]);
             return response()->json(['status' => 'success', 'message' => 'Charge status recorded']);
         }

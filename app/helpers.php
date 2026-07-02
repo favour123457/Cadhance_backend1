@@ -384,7 +384,8 @@ if (!function_exists('fulfillWalletTopup')) {
             ->update(['wallet_history_status_id' => $success]);
 
         if ($affected > 0) {
-            $history->wallet->increment('balance', $history->amount);
+            $creditAmount = $history->amount_usd ?? $history->amount;
+            $history->wallet->increment('balance', $creditAmount);
             return true;
         }
 
@@ -441,7 +442,8 @@ if (!function_exists('verifyFlutterwavePayment')) {
             return ['valid' => false, 'data' => null, 'error' => 'No transaction data returned by Flutterwave.'];
         }
 
-        if (strtolower($data['status'] ?? '') !== 'successful') {
+        $dataStatus = strtolower($data['status'] ?? '');
+        if (!in_array($dataStatus, ['successful', 'completed'], true)) {
             return ['valid' => false, 'data' => $data, 'error' => 'Flutterwave transaction status is not successful.'];
         }
 
