@@ -50,6 +50,7 @@ class PaymentFulfillmentService
                     'wallet_history_type_id'   => WalletHistoryType::CREDIT,
                     'wallet_history_status_id' => WalletHistoryStatus::SUCCESS,
                     'tx_ref'                   => $purchase->tx_ref,
+                    'source'                   => 'asset_sale',
                 ]);
             }
         }
@@ -88,6 +89,7 @@ class PaymentFulfillmentService
                     'wallet_history_type_id'   => WalletHistoryType::CREDIT,
                     'wallet_history_status_id' => WalletHistoryStatus::SUCCESS,
                     'tx_ref'                   => $purchase->tx_ref,
+                    'source'                   => 'template_sale',
                 ]);
             }
         }
@@ -126,6 +128,7 @@ class PaymentFulfillmentService
                     'wallet_history_type_id'   => WalletHistoryType::CREDIT,
                     'wallet_history_status_id' => WalletHistoryStatus::SUCCESS,
                     'tx_ref'                   => $subscription->tx_ref,
+                    'source'                   => 'group_subscription',
                 ]);
             }
         }

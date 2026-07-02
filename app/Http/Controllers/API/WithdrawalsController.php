@@ -278,6 +278,7 @@ class WithdrawalsController extends Controller
                 'amount'                   => $amount,
                 'wallet_history_type_id'   => WalletHistoryType::DEBIT,
                 'wallet_history_status_id' => $walletHistoryStatusId,
+                'source'                   => 'withdrawal',
             ]);
 
             DB::commit();

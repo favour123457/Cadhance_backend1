@@ -37,9 +37,38 @@ class WalletsController extends Controller
 
         $wallet = $user->wallet;
 
+        // Credits are split into user deposits (top-ups) and platform earnings
+        // (sales, group subscriptions, affiliate commissions). The `source`
+        // column is preferred; for legacy rows we infer from the tx_ref prefix.
+        $totalDeposited = WalletHistory::where('wallet_id', $wallet->id)
+            ->where('wallet_history_type_id', WalletHistoryType::CREDIT)
+            ->where('wallet_history_status_id', WalletHistoryStatus::SUCCESS)
+            ->where(function ($query) {
+                $query->where('source', 'topup')
+                    ->orWhere(function ($q) {
+                        $q->whereNull('source')->where('tx_ref', 'like', 'topup_%');
+                    });
+            })
+            ->sum(DB::raw('COALESCE(amount_usd, amount)'));
+
         $totalEarned = WalletHistory::where('wallet_id', $wallet->id)
             ->where('wallet_history_type_id', WalletHistoryType::CREDIT)
             ->where('wallet_history_status_id', WalletHistoryStatus::SUCCESS)
+            ->where(function ($query) {
+                $query->whereIn('source', ['asset_sale', 'template_sale', 'group_subscription', 'affiliate_commission'])
+                    ->orWhere(function ($q) {
+                        $q->whereNull('source')
+                            ->where(function ($inner) {
+                                $inner->where('tx_ref', 'like', 'asset_%')
+                                    ->orWhere('tx_ref', 'like', 'template_%')
+                                    ->orWhere('tx_ref', 'like', 'group_%');
+                            });
+                    })
+                    ->orWhere(function ($q) {
+                        // Legacy affiliate commission credits have no source and no tx_ref.
+                        $q->whereNull('source')->whereNull('tx_ref');
+                    });
+            })
             ->sum(DB::raw('COALESCE(amount_usd, amount)'));
 
         $totalWithdrawn = WalletHistory::where('wallet_id', $wallet->id)
@@ -54,6 +83,7 @@ class WalletsController extends Controller
             'data' => [
                 'current_balance' => (float) $wallet->balance,
                 'total_earned'    => (float) $totalEarned,
+                'total_deposited' => (float) $totalDeposited,
                 'total_withdrawn' => (float) $totalWithdrawn,
                 'in_escrow'       => (float) $inEscrow,
             ],
@@ -93,6 +123,7 @@ class WalletsController extends Controller
             'wallet_history_status_id'=> WalletHistoryStatus::PENDING,
             'tx_ref'                  => $tx_ref,
             'currency'                => $currency,
+            'source'                  => 'topup',
         ]);
 
         $flutterwave  = new FlutterwaveService();

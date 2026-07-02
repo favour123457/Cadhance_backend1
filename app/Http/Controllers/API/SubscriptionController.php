@@ -12,6 +12,8 @@ use App\Models\SubscriptionPlan;
 use App\Models\UserSubscription;
 use App\Models\Wallet;
 use App\Models\WalletHistory;
+use App\Models\WalletHistoryStatus;
+use App\Models\WalletHistoryType;
 use App\Services\SubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -96,8 +98,9 @@ class SubscriptionController extends Controller
             WalletHistory::create([
                 'wallet_id'                => $wallet->id,
                 'amount'                   => $planAmount,
-                'wallet_history_type_id'   => 2,  // Withdrawal
-                'wallet_history_status_id' => 3,  // Success
+                'wallet_history_type_id'   => WalletHistoryType::DEBIT,
+                'wallet_history_status_id' => WalletHistoryStatus::SUCCESS,
+                'source'                   => 'subscription',
             ]);
 
             // Deactivate any previous subscriptions
@@ -176,8 +179,9 @@ class SubscriptionController extends Controller
         WalletHistory::create([
             'wallet_id'                => $wallet->id,
             'amount'                   => $commissionAmount,
-            'wallet_history_type_id'   => 1,
-            'wallet_history_status_id' => 1,
+            'wallet_history_type_id'   => WalletHistoryType::CREDIT,
+            'wallet_history_status_id' => WalletHistoryStatus::SUCCESS,
+            'source'                   => 'affiliate_commission',
         ]);
 
         AffiliateCommission::create([
