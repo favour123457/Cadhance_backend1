@@ -456,7 +456,9 @@ if (!function_exists('verifyFlutterwavePayment')) {
             return ['valid' => false, 'data' => $data, 'error' => 'Transaction ID mismatch.'];
         }
 
-        $chargedAmount = (float) ($data['charged_amount'] ?? $data['amount'] ?? 0);
+        // Use the settlement amount (what was actually meant for the merchant), not the
+        // charged amount which includes Flutterwave fees.
+        $settledAmount = (float) ($data['amount'] ?? $data['charged_amount'] ?? 0);
         $currency = strtoupper($data['currency'] ?? '');
 
         if ($currency !== strtoupper($expected_currency)) {
@@ -464,8 +466,8 @@ if (!function_exists('verifyFlutterwavePayment')) {
         }
 
         // Allow tiny rounding differences (up to 1 unit of the smallest currency unit).
-        if (abs($chargedAmount - $expected_amount) > 0.01) {
-            return ['valid' => false, 'data' => $data, 'error' => "Transaction amount mismatch. Expected {$expected_amount} {$expected_currency}, Flutterwave charged {$chargedAmount} {$currency}."];
+        if (abs($settledAmount - $expected_amount) > 0.01) {
+            return ['valid' => false, 'data' => $data, 'error' => "Transaction amount mismatch. Expected {$expected_amount} {$expected_currency}, Flutterwave settled {$settledAmount} {$currency}."];
         }
 
         return ['valid' => true, 'data' => $data, 'error' => ''];
