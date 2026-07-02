@@ -425,7 +425,7 @@ class AssetController extends Controller
         $tx_ref         = $request->query('tx_ref');
         $transaction_id = (int) $request->query('transaction_id');
 
-        if ($status !== 'successful' || !$tx_ref || !$transaction_id) {
+        if (!in_array($status, ['successful', 'completed'], true) || !$tx_ref || !$transaction_id) {
             return response()->json(['status' => 'failed', 'message' => 'Payment not completed.'], 400);
         }
 
