@@ -105,6 +105,12 @@ class WalletsController extends Controller
         $tx_ref         = $request->query('tx_ref');
         $transaction_id = (int) $request->query('transaction_id');
 
+        \Log::info('Wallet topup callback received', [
+            'status' => $status,
+            'tx_ref' => $tx_ref,
+            'transaction_id' => $transaction_id,
+        ]);
+
         if (!in_array($status, ['successful', 'completed'], true) || !$tx_ref || !$transaction_id) {
             return response()->json([
                 'status'  => 'failed',

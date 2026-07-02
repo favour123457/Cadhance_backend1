@@ -460,12 +460,12 @@ if (!function_exists('verifyFlutterwavePayment')) {
         $currency = strtoupper($data['currency'] ?? '');
 
         if ($currency !== strtoupper($expected_currency)) {
-            return ['valid' => false, 'data' => $data, 'error' => 'Transaction currency mismatch.'];
+            return ['valid' => false, 'data' => $data, 'error' => "Transaction currency mismatch. Expected {$expected_currency}, got {$currency}."];
         }
 
         // Allow tiny rounding differences (up to 1 unit of the smallest currency unit).
         if (abs($chargedAmount - $expected_amount) > 0.01) {
-            return ['valid' => false, 'data' => $data, 'error' => 'Transaction amount mismatch.'];
+            return ['valid' => false, 'data' => $data, 'error' => "Transaction amount mismatch. Expected {$expected_amount} {$expected_currency}, Flutterwave charged {$chargedAmount} {$currency}."];
         }
 
         return ['valid' => true, 'data' => $data, 'error' => ''];
