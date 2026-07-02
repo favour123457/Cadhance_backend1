@@ -18,6 +18,8 @@ class WalletHistoriesResource extends JsonResource
             'id' => $this->id,
             'wallet' => new WalletResource($this->wallet),
             'amount' => $this->amount,
+            'currency' => $this->currency,
+            'amount_usd' => $this->amount_usd,
             'wallet_history_type' => new GeneralTypeTwoResource($this->wallet_history_type),
             'wallet_history_status' => new GeneralTypeTwoResource($this->wallet_history_status),
             'created_at' => $this->created_at,
